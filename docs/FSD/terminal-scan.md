@@ -70,13 +70,17 @@ end tell
 
 ### 4.3 입력 대기 판정 (detector.py)
 
-**MVP 판정 규칙:**
+**판정 규칙:**
 ```
-포그라운드 프로세스가 셸 (zsh, bash, fish, sh) → waiting_for_input = True
-그 외 → waiting_for_input = False
+1. 포그라운드 프로세스가 셸 (zsh, bash, fish, sh) → waiting_for_input = True
+2. 비-셸 프로세스 (claude 등 TUI 앱):
+   → 터미널 콘텐츠 해시를 매 폴링마다 비교
+   → 5회 연속 동일 (10초) → waiting_for_input = True
 ```
 
 셸 프로세스 식별: comm이 `-zsh`, `zsh`, `-bash`, `bash`, `fish`, `sh` 중 하나.
+
+**참고**: TTY mtime은 TUI 앱이 idle 중에도 갱신하므로 사용하지 않음. 콘텐츠 해시가 유일하게 정확한 신호.
 
 ### 4.4 폴링 루프
 

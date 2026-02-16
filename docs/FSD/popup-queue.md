@@ -46,7 +46,17 @@
 
 ## 4. Business Logic
 
-### 4.1 스캔 결과 반영 (queue.update)
+### 4.1 SERVING 해제 규칙
+
+**두 가지 해제 조건:**
+1. **fg_process 변경**: 셸에서 커맨드 실행, 또는 앱 종료 → 즉시 해제
+2. **콘텐츠 사이클 완료**: 콘텐츠가 한 번이라도 바뀐 후, 6초간 정지 → 해제
+
+**절대 규칙:**
+- SERVING 중에는 다른 터미널을 팝업하지 않는다. 큐에만 쌓는다.
+- Terminal.app이 최상단 앱이 아니면 팝업하지 않는다.
+
+### 4.2 스캔 결과 반영 (queue.update)
 
 매 폴링 주기마다 호출:
 
@@ -54,9 +64,7 @@
 def update(self, tabs: list[TerminalTab]):
     waiting_ttys = {t.tty for t in tabs if t.waiting_for_input}
 
-    # 1. serving 중인 터미널이 더 이상 입력 대기가 아니면 → 입력 완료
-    if self.serving and self.serving.tty not in waiting_ttys:
-        self.serving = None
+    # 1. SERVING 해제 판정 (fg 변경 또는 콘텐츠 사이클 완료)
 
     # 2. 대기열에서 이미 입력 완료된 터미널 제거
     self.waiting = [t for t in self.waiting if t.tty in waiting_ttys]
@@ -78,11 +86,14 @@ def update(self, tabs: list[TerminalTab]):
         window_controller.popup(next_tab)
 ```
 
-### 4.2 "입력 완료" 판정
+### 4.3 "입력 완료" 판정
 
-- 이전 폴링: 해당 TTY의 `waiting_for_input = True` (셸이 포그라운드)
-- 현재 폴링: 해당 TTY의 `waiting_for_input = False` (셸이 아닌 프로세스가 포그라운드)
-- → 사용자가 커맨드를 입력하여 실행한 것으로 판정 → 입력 완료
+**셸 (fg = zsh/bash):**
+- fg_process가 셸에서 다른 프로세스로 변경 → 커맨드 실행 → 입력 완료
+
+**인터랙티브 프로그램 (fg = claude 등):**
+- 터미널 콘텐츠가 한 번이라도 변경 (사용자 상호작용 발생)
+- 이후 콘텐츠 6초 정지 (3회 연속 동일 해시) → 응답 완료 → 입력 완료
 
 ### 4.3 자기 터미널 제외
 
