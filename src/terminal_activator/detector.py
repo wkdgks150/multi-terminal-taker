@@ -1,8 +1,5 @@
 """Detect whether a terminal is waiting for user input."""
 
-import os
-import time
-
 from terminal_activator.monitor import TerminalTab
 
 SHELL_NAMES = {
@@ -12,36 +9,43 @@ SHELL_NAMES = {
     "sh", "-sh",
 }
 
-# If TTY has no output for this many seconds, consider it idle
-TTY_IDLE_THRESHOLD = 10.0
 
-
-def get_tty_idle_seconds(tty: str) -> float:
-    """Get seconds since last output on a TTY device."""
-    try:
-        return time.time() - os.stat(tty).st_mtime
-    except OSError:
-        return 0.0
-
-
-def is_waiting_for_input(tab: TerminalTab) -> bool:
-    """Detect if terminal is waiting for user input.
-
-    Signal 1: Shell (zsh/bash) in foreground → definitely waiting.
-    Signal 2: Non-shell process in foreground + TTY idle → likely waiting.
-    """
+def is_shell_foreground(tab: TerminalTab) -> bool:
+    """Check if a shell is the foreground process."""
     process = tab.fg_process.strip()
     if not process:
         return False
-
     basename = process.rsplit("/", 1)[-1] if "/" in process else process
+    return basename in SHELL_NAMES
 
-    # Signal 1: shell in foreground = prompt waiting
-    if basename in SHELL_NAMES:
-        return True
 
-    # Signal 2: TTY idle (no output for N seconds) = process waiting for input
-    if tab.tty_idle_seconds >= TTY_IDLE_THRESHOLD:
-        return True
+class ContentTracker:
+    """Track terminal content changes to detect idle state.
 
-    return False
+    TUI apps (claude, vim, etc.) constantly update TTY mtime even when idle.
+    But their visible text content stays the same when waiting for input.
+
+    Logic: if content hash hasn't changed for N consecutive polls → idle.
+    """
+
+    # Consecutive polls with same content = idle (waiting for input)
+    STATIC_POLLS_THRESHOLD = 5  # 5 × 2s = 10 seconds of no content change
+
+    def __init__(self):
+        self._hashes: dict[str, str] = {}       # tty → last content hash
+        self._static_counts: dict[str, int] = {} # tty → consecutive static polls
+
+    def update(self, tty: str, content_hash: str) -> bool:
+        """Update tracker and return True if terminal is idle (content static)."""
+        last_hash = self._hashes.get(tty, "")
+
+        if content_hash and last_hash and content_hash == last_hash:
+            self._static_counts[tty] = self._static_counts.get(tty, 0) + 1
+        else:
+            self._static_counts[tty] = 0
+
+        self._hashes[tty] = content_hash
+        return self._static_counts.get(tty, 0) >= self.STATIC_POLLS_THRESHOLD
+
+    def is_content_idle(self, tty: str) -> bool:
+        return self._static_counts.get(tty, 0) >= self.STATIC_POLLS_THRESHOLD

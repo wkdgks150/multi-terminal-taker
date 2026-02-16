@@ -67,6 +67,33 @@ def scan_terminals() -> list[TerminalTab]:
     return tabs
 
 
+def get_content_hash(tty: str) -> str:
+    """Get a hash of the terminal tab's visible content for the given TTY."""
+    script = f'''
+    tell application "Terminal"
+        repeat with w in windows
+            repeat with t in tabs of w
+                if tty of t is "{tty}" then
+                    return contents of t
+                end if
+            end repeat
+        end repeat
+        return ""
+    end tell
+    '''
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            import hashlib
+            return hashlib.md5(result.stdout.encode()).hexdigest()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return ""
+
+
 def is_terminal_frontmost() -> bool:
     """Check if Terminal.app is the frontmost application."""
     try:

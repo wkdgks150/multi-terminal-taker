@@ -1,12 +1,14 @@
 """Main daemon loop."""
 
 import os
-import sys
 import time
 import signal
 
-from terminal_activator.monitor import scan_terminals, scan_foreground_processes, is_terminal_frontmost
-from terminal_activator.detector import is_waiting_for_input, get_tty_idle_seconds
+from terminal_activator.monitor import (
+    scan_terminals, scan_foreground_processes,
+    get_content_hash, is_terminal_frontmost,
+)
+from terminal_activator.detector import is_shell_foreground, ContentTracker
 from terminal_activator.queue import PopupQueue
 
 POLL_INTERVAL = 2.0  # seconds
@@ -14,7 +16,6 @@ PID_FILE = "/tmp/terminal-activator.pid"
 
 
 def get_own_tty() -> str:
-    """Get the TTY of the terminal running this daemon."""
     try:
         return os.ttyname(0)
     except OSError:
@@ -22,9 +23,9 @@ def get_own_tty() -> str:
 
 
 def run():
-    """Main daemon loop."""
     own_tty = get_own_tty()
     queue = PopupQueue(own_tty)
+    tracker = ContentTracker()
     running = True
 
     def handle_signal(signum, frame):
@@ -34,42 +35,43 @@ def run():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
-    # Write PID file
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
 
-    if own_tty:
-        print(f"Terminal Activator started (PID: {os.getpid()}, own TTY: {own_tty})")
-    else:
-        print(f"Terminal Activator started (PID: {os.getpid()}, no TTY detected)")
+    print(f"Terminal Activator started (PID: {os.getpid()})")
     print(f"Polling every {POLL_INTERVAL}s. Press Ctrl+C to stop.")
 
     try:
         while running:
-            # 1. Scan terminals
             tabs = scan_terminals()
             if not tabs:
                 time.sleep(POLL_INTERVAL)
                 continue
 
-            # 2. Get foreground processes
             fg_map = scan_foreground_processes()
 
-            # 3. Enrich tabs with fg process, idle time, and detect waiting
+            # Enrich tabs and detect waiting state
             for tab in tabs:
                 tab.fg_process = fg_map.get(tab.tty, "")
-                tab.tty_idle_seconds = get_tty_idle_seconds(tab.tty)
-                tab.waiting_for_input = is_waiting_for_input(tab)
 
-            # 4. Update queue (only popup if Terminal.app is frontmost)
-            queue.update(tabs, terminal_is_frontmost=is_terminal_frontmost())
+                if is_shell_foreground(tab):
+                    # Shell in foreground = definitely waiting
+                    tab.waiting_for_input = True
+                else:
+                    # Non-shell: use content hash to detect idle
+                    content_hash = get_content_hash(tab.tty)
+                    content_idle = tracker.update(tab.tty, content_hash)
+                    tab.waiting_for_input = content_idle
 
-            # 5. Print status
+            # Update queue
+            frontmost = is_terminal_frontmost()
+            queue.update(tabs, terminal_is_frontmost=frontmost)
+
+            # Status
             print(f"\r[{time.strftime('%H:%M:%S')}] {queue.status_line}  ", end="", flush=True)
 
             time.sleep(POLL_INTERVAL)
     finally:
-        # Cleanup PID file
         try:
             os.remove(PID_FILE)
         except OSError:
