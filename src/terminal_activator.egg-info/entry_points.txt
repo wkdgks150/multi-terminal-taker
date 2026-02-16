@@ -1,0 +1,2 @@
+[console_scripts]
+terminal-activator = terminal_activator.cli:main

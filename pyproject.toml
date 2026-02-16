@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "terminal-activator"
+version = "0.1.0"
+description = "Multi-terminal activator that pops up terminals requiring user input"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+terminal-activator = "terminal_activator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

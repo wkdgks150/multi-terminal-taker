@@ -1,0 +1,13 @@
+pyproject.toml
+src/terminal_activator/__init__.py
+src/terminal_activator/cli.py
+src/terminal_activator/daemon.py
+src/terminal_activator/detector.py
+src/terminal_activator/monitor.py
+src/terminal_activator/queue.py
+src/terminal_activator/window_controller.py
+src/terminal_activator.egg-info/PKG-INFO
+src/terminal_activator.egg-info/SOURCES.txt
+src/terminal_activator.egg-info/dependency_links.txt
+src/terminal_activator.egg-info/entry_points.txt
+src/terminal_activator.egg-info/top_level.txt
