@@ -1,105 +1,69 @@
 # Business Plan Document (BPD)
 
-> **Project**: [project name]
-> **Last modified**: [YYYY-MM-DD]
-> **Version**: v0.1
-> **Author**: [name]
+> **Project**: Terminal Activator
+> **Last modified**: 2026-02-16
+> **Version**: v0.2
+> **Author**: 장한
 
 ---
 
 ## 1. Problem Definition
 
-<!-- What problem are we solving? What pain does the market/user currently experience? -->
+터미널을 동시에 여러 개 운영하려면 화면 분할이 필요하다. 그런데 분할 화면은 물리적 한계가 있다. 4분할이 현실적 최대치이고, 그 이상은 글씨가 작아서 못 쓴다.
 
+하지만 실제로는 빌드, 테스트, 서버, AI 에이전트 등 **동시에 10~20개 터미널을 돌려야 하는 상황**이 흔하다. 이 중 대부분은 알아서 돌아가고 있고, 사용자가 개입해야 하는 순간은 일부뿐이다.
 
+온라인 포커의 멀티테이블 소프트웨어가 이걸 해결한 방식이 있다:
+- 수십 개 테이블을 동시에 운영
+- 핸드 레인지 필터로 자동 처리할 건 자동 처리
+- **플레이어의 액션이 필요한 테이블만 최상단으로 팝업**
+- 현재 테이블 처리 완료 시 다음 대기 테이블이 올라옴
+
+Terminal Activator는 이 패턴을 그대로 터미널에 적용한다. 분할 화면 없이, **입력 대기 중인 터미널을 하나씩 최상단으로 서빙**한다. 이러면 터미널 20개도 한 화면에서 빠르게 처리할 수 있다.
 
 ---
 
 ## 2. Target Users
 
-### Persona A
-- **Name / Age / Occupation**:
-- **Behavior patterns**:
-- **Pain points**:
-- **Expectations**:
+나 자신. 그리고 나와 같은 방식으로 일하는 사람들.
 
-### Persona B
-- **Name / Age / Occupation**:
-- **Behavior patterns**:
-- **Pain points**:
-- **Expectations**:
+- 동시에 다수의 터미널을 운영하는 개발자
+- AI 코딩 에이전트를 여러 터미널에서 병렬로 돌리는 사용자
+- 분할 화면의 한계를 느끼는 멀티태스커
 
 ---
 
-## 3. Market Analysis
-
-### TAM (Total Addressable Market)
-<!-- Total market size -->
-
-### SAM (Serviceable Available Market)
-<!-- Realistically accessible market -->
-
-### SOM (Serviceable Obtainable Market)
-<!-- Initial capturable market -->
-
-### Market Trends
-<!-- Growth direction and trends in the relevant market -->
-
----
-
-## 4. Competitive Analysis
-
-### Key Competitors
-
-| Competitor | Strengths | Weaknesses | Our Differentiator |
-|------------|-----------|------------|-------------------|
-| | | | |
-| | | | |
-
-### SWOT Analysis
-
-| | Positive | Negative |
-|---|----------|----------|
-| **Internal** | Strengths: | Weaknesses: |
-| **External** | Opportunities: | Threats: |
-
----
-
-## 5. Business Model
-
-### Revenue Structure
-<!-- Subscription / Ads / Commission / Freemium / etc. -->
-
-### Pricing Policy
-<!-- Specific pricing tiers -->
-
-### Key Metrics (KPI)
-<!-- What numbers define success? -->
-
----
-
-## 6. MVP Scope
+## 3. MVP Scope
 
 ### Must-have
-1.
-2.
-3.
+1. **입력 대기 감지**: Terminal.app 윈도우에서 사용자 입력을 기다리는 상태 감지
+2. **자동 팝업**: 입력 대기 감지 시 해당 Terminal 윈도우를 최상단으로 활성화
+3. **대기열 관리**: 복수 터미널이 동시에 입력 대기일 때 큐잉, 현재 터미널 입력 완료 시 다음 터미널 팝업
 
 ### Nice-to-have
-1.
-2.
-3.
+1. 메뉴바 상태 표시 (대기 중 터미널 수)
+2. 사운드/시각 알림
+3. 우선순위 규칙
 
 ### Out of scope
-1.
-2.
+1. 자체 터미널 에뮬레이터 구현
+2. AI 에이전트 통합 (openclaw 연동은 나중에)
+3. 크로스 플랫폼 지원
+4. iTerm2 등 다른 터미널 앱 지원
 
 ---
 
-## 7. Roadmap
+## 4. Roadmap
 
-| Phase | Timeline | Goal | Key Features |
-|-------|----------|------|-------------|
-| Phase 1 (MVP) | | | |
-| Phase 2 | | | |
-| Phase 3 | | | |
+| Phase | Goal | Key Features |
+|-------|------|-------------|
+| Phase 1 (MVP) | 핵심 기능 동작 | 입력 대기 감지, 자동 팝업, 대기열 |
+| Phase 2 | UX 고도화 | 메뉴바 UI, 커스텀 규칙, 알림, 다른 터미널 앱 지원 |
+| Phase 3 | AI 통합 | openclaw 연동, 메신저 방식 Q&A |
+
+---
+
+## 5. Distribution
+
+- 오픈소스 전제 (라이선스 추후 결정)
+- 당장 공개하지 않음 — 쓸 만해지면 공개
