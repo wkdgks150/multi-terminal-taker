@@ -5,8 +5,8 @@ import sys
 import time
 import signal
 
-from terminal_activator.monitor import scan_terminals, scan_foreground_processes
-from terminal_activator.detector import is_waiting_for_input
+from terminal_activator.monitor import scan_terminals, scan_foreground_processes, is_terminal_frontmost
+from terminal_activator.detector import is_waiting_for_input, get_tty_idle_seconds
 from terminal_activator.queue import PopupQueue
 
 POLL_INTERVAL = 2.0  # seconds
@@ -55,13 +55,14 @@ def run():
             # 2. Get foreground processes
             fg_map = scan_foreground_processes()
 
-            # 3. Enrich tabs with fg process and detect waiting
+            # 3. Enrich tabs with fg process, idle time, and detect waiting
             for tab in tabs:
                 tab.fg_process = fg_map.get(tab.tty, "")
+                tab.tty_idle_seconds = get_tty_idle_seconds(tab.tty)
                 tab.waiting_for_input = is_waiting_for_input(tab)
 
-            # 4. Update queue
-            queue.update(tabs)
+            # 4. Update queue (only popup if Terminal.app is frontmost)
+            queue.update(tabs, terminal_is_frontmost=is_terminal_frontmost())
 
             # 5. Print status
             print(f"\r[{time.strftime('%H:%M:%S')}] {queue.status_line}  ", end="", flush=True)
