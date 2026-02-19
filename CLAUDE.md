@@ -113,6 +113,6 @@ docs/
 
 | # | Feature | FSD File | Status |
 |---|---------|----------|--------|
-| 1 | Terminal Scan (모니터 + 감지) | terminal-scan.md | Pending |
-| 2 | Auto Popup (윈도우 팝업) | auto-popup.md | Pending |
-| 3 | Popup Queue (대기열 + 서빙) | popup-queue.md | Pending |
+| 1 | Terminal Scan (모니터 + 감지) | terminal-scan.md | Done |
+| 2 | Auto Popup (윈도우 팝업) | auto-popup.md | Done |
+| 3 | Popup Queue (대기열 + 서빙) | popup-queue.md | Done |
