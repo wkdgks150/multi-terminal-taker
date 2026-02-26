@@ -6,7 +6,7 @@ import signal
 
 from terminal_activator.monitor import (
     scan_terminals, scan_foreground_processes,
-    get_content_hash, is_terminal_frontmost,
+    get_content_hash,
 )
 from terminal_activator.detector import is_shell_foreground, ContentTracker
 from terminal_activator.queue import PopupQueue
@@ -63,9 +63,8 @@ def run():
                     content_idle = tracker.update(tab.tty, content_hash)
                     tab.waiting_for_input = content_idle
 
-            # Update queue
-            frontmost = is_terminal_frontmost()
-            queue.update(tabs, terminal_is_frontmost=frontmost)
+            # Update queue and reorder windows
+            queue.update(tabs)
 
             # Status
             print(f"\r[{time.strftime('%H:%M:%S')}] {queue.status_line}  ", end="", flush=True)

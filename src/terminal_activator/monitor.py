@@ -94,19 +94,6 @@ def get_content_hash(tty: str) -> str:
     return ""
 
 
-def is_terminal_frontmost() -> bool:
-    """Check if Terminal.app is the frontmost application."""
-    try:
-        result = subprocess.run(
-            ["osascript", "-e",
-             'tell application "System Events" to get name of first application process whose frontmost is true'],
-            capture_output=True, text=True, timeout=3,
-        )
-        frontmost = result.stdout.strip()
-        return frontmost in ("Terminal", "터미널")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
-
 
 def scan_foreground_processes() -> dict[str, str]:
     """Return {tty: fg_process_name} by parsing ps output.
