@@ -1,9 +1,7 @@
 """Scan Terminal.app windows/tabs and process states."""
 
 import subprocess
-import re
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 
 
 @dataclass
@@ -12,10 +10,7 @@ class TerminalTab:
     window_id: int
     tab_index: int
     fg_process: str = ""
-    tty_idle_seconds: float = 0.0
     waiting_for_input: bool = False
-    state: str = "ACTIVE"  # ACTIVE / WAITING / SERVING
-    last_state_change: datetime = field(default_factory=datetime.now)
 
 
 APPLESCRIPT_SCAN = """\
@@ -119,22 +114,6 @@ def get_content_hash(tty: str) -> str:
     return ""
 
 
-
-def get_frontmost_tty() -> str:
-    """Return the TTY of the currently frontmost Terminal.app tab.
-
-    Returns "" if Terminal.app is not the active app or has no windows.
-    """
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", APPLESCRIPT_FRONTMOST_TTY],
-            capture_output=True, text=True, timeout=3,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return ""
 
 
 def scan_foreground_processes() -> dict[str, str]:

@@ -1,11 +1,11 @@
-"""Window ordering queue — arrange waiting terminals by FIFO order."""
+"""Popup queue — pop up waiting terminals in FIFO order."""
 
 from terminal_activator.monitor import TerminalTab
 from terminal_activator import window_controller
 
 
 class PopupQueue:
-    """Maintains an ordered list of waiting terminals and arranges windows.
+    """Maintains an ordered list of waiting terminals and pops up the next one.
 
     Core rule: NEVER interrupt the terminal the user is currently looking at.
     Only switch when the frontmost terminal transitions from IDLE to BUSY
@@ -29,7 +29,7 @@ class PopupQueue:
                 self.queue.append(t.tty)
                 known.add(t.tty)
 
-        need_arrange = False
+        need_popup = False
 
         # Sync serving with frontmost: if user is looking at an idle terminal,
         # that's the one being served (regardless of queue order).
@@ -39,13 +39,13 @@ class PopupQueue:
         if self.serving and self.serving not in waiting_ttys:
             # SERVING terminal became BUSY → user submitted prompt → switch
             self.serving = None
-            need_arrange = True
+            need_popup = True
 
         if not self.serving and self.queue:
             self.serving = self.queue[0]
-            need_arrange = True
+            need_popup = True
 
-        if need_arrange and self.serving:
+        if need_popup and self.serving:
             window_controller.popup(self.serving)
 
     @property
