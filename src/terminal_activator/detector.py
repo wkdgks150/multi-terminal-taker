@@ -1,4 +1,13 @@
-"""Detect whether a terminal is waiting for user input."""
+"""Detect whether a terminal is waiting for user input.
+
+Detection strategy:
+- Shell foreground (zsh/bash/fish) → always waiting for input.
+- Claude Code → hook-based: checks /tmp/terminal-activator/{tty}.idle marker file.
+  Marker is created by Claude Code's Stop hook (idle) and removed by
+  UserPromptSubmit hook (busy).
+"""
+
+import os
 
 from terminal_activator.monitor import TerminalTab
 
@@ -8,6 +17,8 @@ SHELL_NAMES = {
     "fish", "-fish",
     "sh", "-sh",
 }
+
+MARKER_DIR = "/tmp/terminal-activator"
 
 
 def is_shell_foreground(tab: TerminalTab) -> bool:
@@ -19,33 +30,7 @@ def is_shell_foreground(tab: TerminalTab) -> bool:
     return basename in SHELL_NAMES
 
 
-class ContentTracker:
-    """Track terminal content changes to detect idle state.
-
-    TUI apps (claude, vim, etc.) constantly update TTY mtime even when idle.
-    But their visible text content stays the same when waiting for input.
-
-    Logic: if content hash hasn't changed for N consecutive polls → idle.
-    """
-
-    # Consecutive polls with same content = idle (waiting for input)
-    STATIC_POLLS_THRESHOLD = 5  # 5 × 2s = 10 seconds of no content change
-
-    def __init__(self):
-        self._hashes: dict[str, str] = {}       # tty → last content hash
-        self._static_counts: dict[str, int] = {} # tty → consecutive static polls
-
-    def update(self, tty: str, content_hash: str) -> bool:
-        """Update tracker and return True if terminal is idle (content static)."""
-        last_hash = self._hashes.get(tty, "")
-
-        if content_hash and last_hash and content_hash == last_hash:
-            self._static_counts[tty] = self._static_counts.get(tty, 0) + 1
-        else:
-            self._static_counts[tty] = 0
-
-        self._hashes[tty] = content_hash
-        return self._static_counts.get(tty, 0) >= self.STATIC_POLLS_THRESHOLD
-
-    def is_content_idle(self, tty: str) -> bool:
-        return self._static_counts.get(tty, 0) >= self.STATIC_POLLS_THRESHOLD
+def has_idle_marker(tty: str) -> bool:
+    """Check if the Claude Code idle marker file exists for this TTY."""
+    tty_name = os.path.basename(tty)  # /dev/ttys001 → ttys001
+    return os.path.exists(os.path.join(MARKER_DIR, f"{tty_name}.idle"))

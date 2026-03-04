@@ -7,37 +7,49 @@ from terminal_activator import window_controller
 class PopupQueue:
     """Maintains an ordered list of waiting terminals and arranges windows.
 
-    - Waiting terminals are ordered FIFO (first to start waiting = front).
-    - Window z-order is updated only when the queue changes.
-    - Does NOT activate Terminal.app — just reorders windows.
+    Core rule: NEVER interrupt the terminal the user is currently looking at.
+    Only switch when the frontmost terminal transitions from IDLE to BUSY
+    (user submitted a prompt, Claude started processing).
     """
 
     def __init__(self, own_tty: str):
         self.own_tty = own_tty
-        self.queue: list[str] = []  # ordered TTYs, FIFO
+        self.queue: list[str] = []  # idle TTYs, FIFO order
+        self.serving: str | None = None
 
-    def update(self, tabs: list[TerminalTab]) -> None:
+    def update(self, tabs: list[TerminalTab], frontmost_tty: str) -> None:
         tabs = [t for t in tabs if t.tty != self.own_tty]
         waiting_ttys = {t.tty for t in tabs if t.waiting_for_input}
 
-        prev_queue = list(self.queue)
-
-        # Remove TTYs no longer waiting
+        # Update queue: remove non-waiting, add new waiting (FIFO)
         self.queue = [tty for tty in self.queue if tty in waiting_ttys]
-
-        # Add new waiting TTYs to end (FIFO)
         known = set(self.queue)
         for t in tabs:
             if t.waiting_for_input and t.tty not in known:
                 self.queue.append(t.tty)
                 known.add(t.tty)
 
-        # Reorder windows only when queue changes
-        if self.queue != prev_queue and self.queue:
-            window_controller.arrange(self.queue)
+        need_arrange = False
+
+        # Sync serving with frontmost: if user is looking at an idle terminal,
+        # that's the one being served (regardless of queue order).
+        if frontmost_tty and frontmost_tty in waiting_ttys:
+            self.serving = frontmost_tty
+
+        if self.serving and self.serving not in waiting_ttys:
+            # SERVING terminal became BUSY → user submitted prompt → switch
+            self.serving = None
+            need_arrange = True
+
+        if not self.serving and self.queue:
+            self.serving = self.queue[0]
+            need_arrange = True
+
+        if need_arrange and self.serving:
+            window_controller.popup(self.serving)
 
     @property
     def status_line(self) -> str:
-        if self.queue:
-            return f"QUEUE: {len(self.queue)} | FRONT: {self.queue[0]}"
+        if self.serving:
+            return f"QUEUE: {len(self.queue)} | SERVING: {self.serving}"
         return "IDLE"

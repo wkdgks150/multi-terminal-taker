@@ -19,6 +19,11 @@ class TerminalTab:
 
 
 APPLESCRIPT_SCAN = """\
+set appName to ""
+tell application "System Events"
+    set appName to name of first application process whose frontmost is true
+end tell
+set frontTTY to ""
 tell application "Terminal"
     set output to ""
     repeat with w in windows
@@ -30,29 +35,40 @@ tell application "Terminal"
             set output to output & wid & "\\t" & tabIdx & "\\t" & ttyPath & linefeed
         end repeat
     end repeat
-    return output
+    if appName is "Terminal" and (count of windows) > 0 then
+        set frontTTY to tty of selected tab of window 1
+    end if
+    return output & "FRONT\\t" & frontTTY
 end tell
 """
 
 
-def scan_terminals() -> list[TerminalTab]:
-    """Scan all Terminal.app windows/tabs via AppleScript."""
+def scan_terminals() -> tuple[list[TerminalTab], str]:
+    """Scan all Terminal.app windows/tabs and frontmost TTY in one call.
+
+    Returns (tabs, frontmost_tty). frontmost_tty is "" if Terminal.app
+    is not the active app.
+    """
     try:
         result = subprocess.run(
             ["osascript", "-e", APPLESCRIPT_SCAN],
             capture_output=True, text=True, timeout=5,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        return []
+        return [], ""
 
     if result.returncode != 0:
-        return []
+        return [], ""
 
     tabs = []
+    frontmost_tty = ""
     for line in result.stdout.strip().split("\n"):
         if not line.strip():
             continue
         parts = line.split("\t")
+        if len(parts) >= 2 and parts[0] == "FRONT":
+            frontmost_tty = parts[1].strip()
+            continue
         if len(parts) < 3:
             continue
         try:
@@ -64,17 +80,26 @@ def scan_terminals() -> list[TerminalTab]:
         except (ValueError, IndexError):
             continue
 
-    return tabs
+    return tabs, frontmost_tty
 
 
 def get_content_hash(tty: str) -> str:
-    """Get a hash of the terminal tab's visible content for the given TTY."""
+    """Get a hash of the terminal tab's recent content for the given TTY.
+
+    Uses 'history' instead of 'contents' because 'contents' returns a
+    reference string (not actual text) for alternate-screen apps like
+    Claude Code, vim, etc.  Only the last 1000 chars are hashed for speed.
+    """
     script = f'''
     tell application "Terminal"
         repeat with w in windows
             repeat with t in tabs of w
                 if tty of t is "{tty}" then
-                    return contents of t
+                    set h to history of t
+                    if length of h > 1000 then
+                        return text ((length of h) - 999) thru (length of h) of h
+                    end if
+                    return h
                 end if
             end repeat
         end repeat
@@ -93,6 +118,23 @@ def get_content_hash(tty: str) -> str:
         pass
     return ""
 
+
+
+def get_frontmost_tty() -> str:
+    """Return the TTY of the currently frontmost Terminal.app tab.
+
+    Returns "" if Terminal.app is not the active app or has no windows.
+    """
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", APPLESCRIPT_FRONTMOST_TTY],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return ""
 
 
 def scan_foreground_processes() -> dict[str, str]:
