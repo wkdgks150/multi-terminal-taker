@@ -4,8 +4,11 @@ import os
 import time
 import signal
 
-from terminal_activator.monitor import scan_terminals
-from terminal_activator.detector import has_idle_marker
+from terminal_activator.monitor import scan_terminals, scan_foreground_processes
+from terminal_activator.detector import (
+    has_idle_marker, is_shell_foreground, is_interactive_app,
+    ContentStasisTracker,
+)
 from terminal_activator.queue import PopupQueue
 
 POLL_INTERVAL = 1.0  # seconds
@@ -22,6 +25,7 @@ def get_own_tty() -> str:
 def run():
     own_tty = get_own_tty()
     queue = PopupQueue(own_tty)
+    stasis = ContentStasisTracker()
     running = True
 
     def handle_signal(signum, frame):
@@ -44,8 +48,20 @@ def run():
                 time.sleep(POLL_INTERVAL)
                 continue
 
+            fg_map = scan_foreground_processes()
+
             for tab in tabs:
-                tab.waiting_for_input = has_idle_marker(tab.tty)
+                tab.fg_process = fg_map.get(tab.tty, "")
+
+                if has_idle_marker(tab.tty):
+                    tab.waiting_for_input = True
+                elif is_shell_foreground(tab):
+                    tab.waiting_for_input = True
+                elif is_interactive_app(tab) and stasis.update(tab.tty, tab.content_len):
+                    tab.waiting_for_input = True
+                else:
+                    stasis.update(tab.tty, tab.content_len)
+                    tab.waiting_for_input = False
 
             queue.update(tabs, frontmost_tty)
 

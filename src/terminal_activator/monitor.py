@@ -10,6 +10,7 @@ class TerminalTab:
     window_id: int
     tab_index: int
     fg_process: str = ""
+    content_len: int = 0
     waiting_for_input: bool = False
 
 
@@ -27,7 +28,8 @@ tell application "Terminal"
         repeat with t in tabs of w
             set tabIdx to tabIdx + 1
             set ttyPath to tty of t
-            set output to output & wid & "\\t" & tabIdx & "\\t" & ttyPath & linefeed
+            set hLen to length of history of t
+            set output to output & wid & "\\t" & tabIdx & "\\t" & ttyPath & "\\t" & hLen & linefeed
         end repeat
     end repeat
     if appName is "Terminal" and (count of windows) > 0 then
@@ -64,13 +66,14 @@ def scan_terminals() -> tuple[list[TerminalTab], str]:
         if len(parts) >= 2 and parts[0] == "FRONT":
             frontmost_tty = parts[1].strip()
             continue
-        if len(parts) < 3:
+        if len(parts) < 4:
             continue
         try:
             tabs.append(TerminalTab(
                 window_id=int(parts[0]),
                 tab_index=int(parts[1]),
                 tty=parts[2].strip(),
+                content_len=int(parts[3]),
             ))
         except (ValueError, IndexError):
             continue
@@ -78,50 +81,8 @@ def scan_terminals() -> tuple[list[TerminalTab], str]:
     return tabs, frontmost_tty
 
 
-def get_content_hash(tty: str) -> str:
-    """Get a hash of the terminal tab's recent content for the given TTY.
-
-    Uses 'history' instead of 'contents' because 'contents' returns a
-    reference string (not actual text) for alternate-screen apps like
-    Claude Code, vim, etc.  Only the last 1000 chars are hashed for speed.
-    """
-    script = f'''
-    tell application "Terminal"
-        repeat with w in windows
-            repeat with t in tabs of w
-                if tty of t is "{tty}" then
-                    set h to history of t
-                    if length of h > 1000 then
-                        return text ((length of h) - 999) thru (length of h) of h
-                    end if
-                    return h
-                end if
-            end repeat
-        end repeat
-        return ""
-    end tell
-    '''
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=3,
-        )
-        if result.returncode == 0:
-            import hashlib
-            return hashlib.md5(result.stdout.encode()).hexdigest()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return ""
-
-
-
-
 def scan_foreground_processes() -> dict[str, str]:
-    """Return {tty: fg_process_name} by parsing ps output.
-
-    Uses TPGID to identify the foreground process group of each TTY,
-    then finds the process whose PGID == TPGID.
-    """
+    """Return {tty: fg_process_name} by parsing ps output."""
     try:
         result = subprocess.run(
             ["ps", "-e", "-o", "pid,pgid,tpgid,tty,comm"],
@@ -133,13 +94,10 @@ def scan_foreground_processes() -> dict[str, str]:
     if result.returncode != 0:
         return {}
 
-    # Parse ps output: find foreground process for each TTY
-    # tpgid_map: {tty: tpgid}
-    # pgid_procs: {(tty, pgid): process_name}
     tpgid_map: dict[str, int] = {}
     pgid_procs: dict[tuple[str, int], str] = {}
 
-    for line in result.stdout.strip().split("\n")[1:]:  # skip header
+    for line in result.stdout.strip().split("\n")[1:]:
         parts = line.split()
         if len(parts) < 5:
             continue
@@ -155,16 +113,12 @@ def scan_foreground_processes() -> dict[str, str]:
         if tty == "??" or tpgid <= 0:
             continue
 
-        # Normalize TTY: "ttys005" -> "/dev/ttys005"
         tty_path = f"/dev/{tty}" if not tty.startswith("/dev/") else tty
-
         tpgid_map[tty_path] = tpgid
 
-        # Track process where PID == PGID (group leader)
         if pid == pgid:
             pgid_procs[(tty_path, pgid)] = comm
 
-    # Match: for each TTY, find the process whose PGID == TPGID
     fg_map: dict[str, str] = {}
     for tty_path, tpgid in tpgid_map.items():
         key = (tty_path, tpgid)
