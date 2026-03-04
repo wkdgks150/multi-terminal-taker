@@ -1,4 +1,7 @@
-"""Scan Terminal.app windows/tabs and process states."""
+"""Scan terminal windows/tabs and process states.
+
+Supports Terminal.app and iTerm2. Automatically detects which apps are running.
+"""
 
 import subprocess
 from dataclasses import dataclass
@@ -9,6 +12,7 @@ class TerminalTab:
     tty: str
     window_id: int
     tab_index: int
+    app: str = ""  # "Terminal" or "iTerm2"
     fg_process: str = ""
     content_len: int = 0
     waiting_for_input: bool = False
@@ -16,35 +20,64 @@ class TerminalTab:
 
 APPLESCRIPT_SCAN = """\
 set appName to ""
+set termRunning to false
+set itermRunning to false
 tell application "System Events"
     set appName to name of first application process whose frontmost is true
+    set procNames to name of every application process
+    set termRunning to procNames contains "Terminal"
+    set itermRunning to procNames contains "iTerm2"
 end tell
 set frontTTY to ""
-tell application "Terminal"
-    set output to ""
-    repeat with w in windows
-        set wid to id of w
-        set tabIdx to 0
-        repeat with t in tabs of w
-            set tabIdx to tabIdx + 1
-            set ttyPath to tty of t
-            set hLen to length of history of t
-            set output to output & wid & "\\t" & tabIdx & "\\t" & ttyPath & "\\t" & hLen & linefeed
+set output to ""
+
+if termRunning then
+    tell application "Terminal"
+        repeat with w in windows
+            set wid to id of w
+            set tabIdx to 0
+            repeat with t in tabs of w
+                set tabIdx to tabIdx + 1
+                set ttyPath to tty of t
+                set hLen to length of history of t
+                set output to output & "T" & "\\t" & wid & "\\t" & tabIdx & "\\t" & ttyPath & "\\t" & hLen & linefeed
+            end repeat
         end repeat
-    end repeat
-    if appName is "Terminal" and (count of windows) > 0 then
-        set frontTTY to tty of selected tab of window 1
-    end if
-    return output & "FRONT\\t" & frontTTY
-end tell
+        if appName is "Terminal" and (count of windows) > 0 then
+            set frontTTY to tty of selected tab of window 1
+        end if
+    end tell
+end if
+
+if itermRunning then
+    tell application "iTerm2"
+        repeat with w in windows
+            set wid to id of w
+            set tabIdx to 0
+            repeat with t in tabs of w
+                set tabIdx to tabIdx + 1
+                repeat with s in sessions of t
+                    set ttyPath to tty of s
+                    set cLen to length of contents of s
+                    set output to output & "I" & "\\t" & wid & "\\t" & tabIdx & "\\t" & ttyPath & "\\t" & cLen & linefeed
+                end repeat
+            end repeat
+        end repeat
+        if appName is "iTerm2" and (count of windows) > 0 then
+            set frontTTY to tty of current session of current tab of current window
+        end if
+    end tell
+end if
+
+return output & "FRONT\\t" & frontTTY
 """
 
 
 def scan_terminals() -> tuple[list[TerminalTab], str]:
-    """Scan all Terminal.app windows/tabs and frontmost TTY in one call.
+    """Scan all terminal windows/tabs and frontmost TTY in one call.
 
-    Returns (tabs, frontmost_tty). frontmost_tty is "" if Terminal.app
-    is not the active app.
+    Supports Terminal.app and iTerm2. Returns (tabs, frontmost_tty).
+    frontmost_tty is "" if no supported terminal app is the active app.
     """
     try:
         result = subprocess.run(
@@ -57,6 +90,7 @@ def scan_terminals() -> tuple[list[TerminalTab], str]:
     if result.returncode != 0:
         return [], ""
 
+    app_map = {"T": "Terminal", "I": "iTerm2"}
     tabs = []
     frontmost_tty = ""
     for line in result.stdout.strip().split("\n"):
@@ -66,14 +100,15 @@ def scan_terminals() -> tuple[list[TerminalTab], str]:
         if len(parts) >= 2 and parts[0] == "FRONT":
             frontmost_tty = parts[1].strip()
             continue
-        if len(parts) < 4:
+        if len(parts) < 5:
             continue
         try:
             tabs.append(TerminalTab(
-                window_id=int(parts[0]),
-                tab_index=int(parts[1]),
-                tty=parts[2].strip(),
-                content_len=int(parts[3]),
+                app=app_map.get(parts[0], ""),
+                window_id=int(parts[1]),
+                tab_index=int(parts[2]),
+                tty=parts[3].strip(),
+                content_len=int(parts[4]),
             ))
         except (ValueError, IndexError):
             continue
