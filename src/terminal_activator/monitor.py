@@ -39,7 +39,8 @@ if termRunning then
             repeat with t in tabs of w
                 set tabIdx to tabIdx + 1
                 set ttyPath to tty of t
-                set hLen to length of history of t
+                set h to history of t
+                set hLen to length of h
                 set output to output & "T" & "\\t" & wid & "\\t" & tabIdx & "\\t" & ttyPath & "\\t" & hLen & linefeed
             end repeat
         end repeat
@@ -58,7 +59,8 @@ if itermRunning then
                 set tabIdx to tabIdx + 1
                 repeat with s in sessions of t
                     set ttyPath to tty of s
-                    set cLen to length of contents of s
+                    set c to contents of s
+                    set cLen to length of c
                     set output to output & "I" & "\\t" & wid & "\\t" & tabIdx & "\\t" & ttyPath & "\\t" & cLen & linefeed
                 end repeat
             end repeat
