@@ -55,13 +55,17 @@ def run():
 
                 if has_idle_marker(tab.tty):
                     tab.waiting_for_input = True
+                    tab.idle_reason = "marker"
                 elif is_shell_foreground(tab):
                     tab.waiting_for_input = True
+                    tab.idle_reason = "shell"
                 elif is_interactive_app(tab) and stasis.update(tab.tty, tab.content_len):
                     tab.waiting_for_input = True
+                    tab.idle_reason = "stasis"
                 else:
                     stasis.update(tab.tty, tab.content_len)
                     tab.waiting_for_input = False
+                    tab.idle_reason = ""
 
             queue.update(tabs, frontmost_tty)
 

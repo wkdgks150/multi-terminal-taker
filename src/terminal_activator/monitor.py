@@ -16,6 +16,7 @@ class TerminalTab:
     fg_process: str = ""
     content_len: int = 0
     waiting_for_input: bool = False
+    idle_reason: str = ""  # "marker", "shell", "stasis", or ""
 
 
 APPLESCRIPT_SCAN = """\

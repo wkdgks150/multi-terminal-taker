@@ -25,7 +25,7 @@ INTERACTIVE_APPS = {
 }
 
 MARKER_DIR = "/tmp/terminal-activator"
-STASIS_POLLS = 4  # consecutive unchanged polls → idle (4s at 1s interval)
+STASIS_POLLS = 8  # consecutive unchanged polls → idle (8s at 1s interval)
 
 
 def is_shell_foreground(tab: TerminalTab) -> bool:

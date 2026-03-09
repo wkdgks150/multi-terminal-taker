@@ -19,13 +19,16 @@ class PopupQueue:
 
     def update(self, tabs: list[TerminalTab], frontmost_tty: str) -> None:
         tabs = [t for t in tabs if t.tty != self.own_tty]
-        waiting_ttys = {t.tty for t in tabs if t.waiting_for_input}
+        # Only queue terminals with Claude-related idle signals (marker/stasis).
+        # Plain shell prompts ("shell") are excluded — they're regular terminals
+        # that shouldn't trigger popup behaviour.
+        waiting_ttys = {t.tty for t in tabs if t.waiting_for_input and t.idle_reason != "shell"}
 
         # Update queue: remove non-waiting, add new waiting (FIFO)
         self.queue = [tty for tty in self.queue if tty in waiting_ttys]
         known = set(self.queue)
         for t in tabs:
-            if t.waiting_for_input and t.tty not in known:
+            if t.tty in waiting_ttys and t.tty not in known:
                 self.queue.append(t.tty)
                 known.add(t.tty)
 

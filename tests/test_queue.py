@@ -5,10 +5,12 @@ from terminal_activator.monitor import TerminalTab
 from terminal_activator.queue import PopupQueue
 
 
-def _tab(tty: str, fg: str = "-zsh", waiting: bool = True) -> TerminalTab:
+def _tab(tty: str, fg: str = "-zsh", waiting: bool = True,
+         idle_reason: str = "marker") -> TerminalTab:
     return TerminalTab(
         tty=tty, window_id=1, tab_index=1,
         fg_process=fg, waiting_for_input=waiting,
+        idle_reason=idle_reason if waiting else "",
     )
 
 
@@ -178,6 +180,56 @@ class TestFrontmostSync:
         # Terminal.app not frontmost
         q.update([_tab("/dev/ttys001"), _tab("/dev/ttys002")], "")
         assert q.serving == "/dev/ttys001"
+
+
+class TestShellExclusion:
+    """Shell-only idle terminals must NOT enter the popup queue."""
+
+    @patch("terminal_activator.queue.window_controller")
+    def test_shell_only_terminal_excluded_from_queue(self, mock_wc):
+        """A new terminal at shell prompt should not enter queue."""
+        q = PopupQueue("/dev/ttys000")
+        q.update([_tab("/dev/ttys001", idle_reason="shell")], "")
+        assert q.queue == []
+        mock_wc.popup.assert_not_called()
+
+    @patch("terminal_activator.queue.window_controller")
+    def test_shell_terminal_does_not_trigger_popup(self, mock_wc):
+        """Typing in a shell terminal should not popup idle Claude sessions."""
+        q = PopupQueue("/dev/ttys000")
+        # Claude session idle (marker), plus a shell terminal
+        q.update([
+            _tab("/dev/ttys001", idle_reason="marker"),
+            _tab("/dev/ttys002", idle_reason="shell"),
+        ], "/dev/ttys002")
+        mock_wc.popup.reset_mock()
+        # User types in shell terminal → it becomes busy
+        q.update([
+            _tab("/dev/ttys001", idle_reason="marker"),
+            _tab("/dev/ttys002", waiting=False),
+        ], "/dev/ttys002")
+        # Should NOT popup ttys001 — user is working in a regular terminal
+        mock_wc.popup.assert_not_called()
+        # serving should stay as ttys001 (was set when no serving existed)
+        assert q.serving == "/dev/ttys001"
+
+    @patch("terminal_activator.queue.window_controller")
+    def test_marker_terminal_still_queued(self, mock_wc):
+        """Terminals with idle marker should still be queued normally."""
+        q = PopupQueue("/dev/ttys000")
+        q.update([
+            _tab("/dev/ttys001", idle_reason="marker"),
+            _tab("/dev/ttys002", idle_reason="shell"),
+        ], "")
+        assert q.queue == ["/dev/ttys001"]
+        assert "/dev/ttys002" not in q.queue
+
+    @patch("terminal_activator.queue.window_controller")
+    def test_stasis_terminal_still_queued(self, mock_wc):
+        """Terminals with stasis detection should still be queued."""
+        q = PopupQueue("/dev/ttys000")
+        q.update([_tab("/dev/ttys001", idle_reason="stasis")], "")
+        assert q.queue == ["/dev/ttys001"]
 
 
 class TestStatusLine:
