@@ -5,10 +5,7 @@ import time
 import signal
 
 from mtt.monitor import scan_terminals, scan_foreground_processes
-from mtt.detector import (
-    has_idle_marker, is_shell_foreground, is_interactive_app,
-    ContentStasisTracker,
-)
+from mtt.detector import detect_idle, ContentStasisTracker
 from mtt.queue import PopupQueue
 
 POLL_INTERVAL = 1.0  # seconds
@@ -52,26 +49,9 @@ def run():
 
             for tab in tabs:
                 fg_info = fg_map.get(tab.tty)
-                tab.fg_process = fg_info[0] if fg_info else ""
-                child_pids = fg_info[1] if fg_info else frozenset()
-
-                if has_idle_marker(tab.tty):
-                    tab.waiting_for_input = True
-                    tab.idle_reason = "marker"
-                elif is_shell_foreground(tab):
-                    tab.waiting_for_input = True
-                    tab.idle_reason = "shell"
-                elif is_interactive_app(tab):
-                    if stasis.update(tab.tty, tab.content_len, child_pids):
-                        tab.waiting_for_input = True
-                        tab.idle_reason = "stasis"
-                    else:
-                        tab.waiting_for_input = False
-                        tab.idle_reason = ""
-                else:
-                    stasis.update(tab.tty, tab.content_len, child_pids)
-                    tab.waiting_for_input = False
-                    tab.idle_reason = ""
+                tab.fg_process = fg_info.name if fg_info else ""
+                child_pids = fg_info.child_pids if fg_info else frozenset()
+                detect_idle(tab, child_pids, stasis)
 
             queue.update(tabs, frontmost_tty)
 

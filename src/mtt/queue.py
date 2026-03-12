@@ -7,9 +7,12 @@ from mtt import window_controller
 class PopupQueue:
     """Maintains an ordered list of waiting terminals and pops up the next one.
 
-    Core rule: NEVER interrupt the terminal the user is currently looking at.
-    Only switch when the frontmost terminal transitions from IDLE to BUSY
-    (user submitted a prompt, Claude started processing).
+    Core rules:
+    - NEVER interrupt the terminal the user is currently looking at.
+    - Marker-based idle → auto-switch on submission (definitive signal).
+    - Stasis-based idle → NEVER auto-switch (can't distinguish typing
+      from submission).  Switch only via frontmost sync or terminal
+      re-entering idle.
     """
 
     def __init__(self, own_tty: str):
@@ -20,48 +23,63 @@ class PopupQueue:
 
     def update(self, tabs: list[TerminalTab], frontmost_tty: str) -> None:
         tabs = [t for t in tabs if t.tty != self.own_tty]
-        # Only queue terminals with Claude-related idle signals (marker/stasis).
-        # Plain shell prompts ("shell") are excluded — they're regular terminals
-        # that shouldn't trigger popup behaviour.
-        waiting_ttys = {t.tty for t in tabs if t.waiting_for_input and t.idle_reason != "shell"}
-        reason_map = {t.tty: t.idle_reason for t in tabs if t.tty in waiting_ttys}
+        waiting = {
+            t.tty: t.idle_reason
+            for t in tabs
+            if t.waiting_for_input and t.idle_reason != "shell"
+        }
+        visible = {t.tty for t in tabs}
 
-        # Update queue: remove non-waiting, add new waiting (FIFO)
-        self.queue = [tty for tty in self.queue if tty in waiting_ttys]
+        self._maintain_queue(tabs, waiting)
+        self._resolve_serving(waiting, visible, frontmost_tty)
+
+    # -- internals --------------------------------------------------
+
+    def _maintain_queue(self, tabs: list[TerminalTab],
+                        waiting: dict[str, str]) -> None:
+        """Update FIFO queue: drop non-waiting, append new arrivals."""
+        self.queue = [tty for tty in self.queue if tty in waiting]
         known = set(self.queue)
         for t in tabs:
-            if t.tty in waiting_ttys and t.tty not in known:
+            if t.tty in waiting and t.tty not in known:
                 self.queue.append(t.tty)
                 known.add(t.tty)
 
+    def _resolve_serving(self, waiting: dict[str, str],
+                         visible: set[str], frontmost_tty: str) -> None:
+        """Decide which terminal to serve and whether to trigger a popup."""
         need_popup = False
 
-        # Sync serving with frontmost: if user is looking at an idle terminal,
+        # Terminal closed/disappeared → clear immediately.
+        if self.serving and self.serving not in visible:
+            self.serving = None
+            self.serving_reason = ""
+
+        # Frontmost sync: if user is looking at an idle terminal,
         # that's the one being served (regardless of queue order).
-        if frontmost_tty and frontmost_tty in waiting_ttys:
+        if frontmost_tty and frontmost_tty in waiting:
             self.serving = frontmost_tty
-            self.serving_reason = reason_map.get(frontmost_tty, "")
+            self.serving_reason = waiting[frontmost_tty]
 
-        # Keep serving_reason up to date while serving terminal stays idle.
-        if self.serving and self.serving in waiting_ttys:
-            self.serving_reason = reason_map.get(self.serving, self.serving_reason)
+        # Keep serving_reason up to date while terminal stays idle.
+        if self.serving and self.serving in waiting:
+            self.serving_reason = waiting[self.serving]
 
-        if self.serving and self.serving not in waiting_ttys:
-            if self.serving_reason == "stasis" and frontmost_tty == self.serving:
-                # Stasis-based idle + user is looking at it → content change
-                # is likely from user typing, not submission. Hold off until
-                # user looks away or terminal becomes idle again.
-                pass
-            else:
-                # Marker-based (definitive submit signal) or user isn't
-                # looking → safe to switch.
+        # Serving terminal left idle state → decide whether to switch.
+        if self.serving and self.serving not in waiting:
+            if self.serving_reason == "marker":
+                # Marker removal = user submitted prompt → safe to switch.
                 self.serving = None
                 self.serving_reason = ""
                 need_popup = True
+            # else (stasis): content change could be typing OR submission.
+            # Cannot distinguish → do NOT auto-switch.  Serving stays
+            # until frontmost sync re-assigns or terminal re-enters idle.
 
+        # No serving terminal → pop next from queue.
         if not self.serving and self.queue:
             self.serving = self.queue[0]
-            self.serving_reason = reason_map.get(self.serving, "")
+            self.serving_reason = waiting.get(self.serving, "")
             need_popup = True
 
         if need_popup and self.serving:

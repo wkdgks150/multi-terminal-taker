@@ -19,6 +19,13 @@ class TerminalTab:
     idle_reason: str = ""  # "marker", "shell", "stasis", or ""
 
 
+@dataclass
+class FgProcessInfo:
+    """Foreground process information for a TTY."""
+    name: str
+    child_pids: frozenset[int]
+
+
 APPLESCRIPT_SCAN = """\
 set appName to ""
 set termRunning to false
@@ -119,13 +126,13 @@ def scan_terminals() -> tuple[list[TerminalTab], str]:
     return tabs, frontmost_tty
 
 
-def scan_foreground_processes() -> dict[str, tuple[str, frozenset[int]]]:
-    """Return {tty: (fg_process_name, child_pids_on_tty)} by parsing ps output.
+def scan_foreground_processes() -> dict[str, FgProcessInfo]:
+    """Return {tty: FgProcessInfo} by parsing ps output.
 
-    child_pids_on_tty contains PIDs of direct children of the foreground
-    process group leader that share the same TTY.  This lets callers
-    distinguish "claude waiting for input" (no children) from "claude
-    running a tool" (bash/python/… child present).
+    FgProcessInfo.child_pids contains PIDs of direct children of the
+    foreground process group leader that share the same TTY.  This lets
+    callers distinguish "claude waiting for input" (no children) from
+    "claude running a tool" (bash/python/… child present).
     """
     try:
         result = subprocess.run(
@@ -166,7 +173,7 @@ def scan_foreground_processes() -> dict[str, tuple[str, frozenset[int]]]:
         if pid == pgid:
             pgid_procs[(tty_path, pgid)] = (comm, pid)
 
-    fg_map: dict[str, tuple[str, frozenset[int]]] = {}
+    fg_map: dict[str, FgProcessInfo] = {}
     for tty_path, tpgid in tpgid_map.items():
         key = (tty_path, tpgid)
         if key in pgid_procs:
@@ -175,6 +182,6 @@ def scan_foreground_processes() -> dict[str, tuple[str, frozenset[int]]]:
                 pid for pid, ppid in tty_procs.get(tty_path, [])
                 if ppid == fg_pid and pid != fg_pid
             )
-            fg_map[tty_path] = (comm, children)
+            fg_map[tty_path] = FgProcessInfo(name=comm, child_pids=children)
 
     return fg_map

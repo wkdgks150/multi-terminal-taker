@@ -1,18 +1,20 @@
 """Tests for detector module."""
 
 import os
-import tempfile
 from unittest.mock import patch
 from mtt.monitor import TerminalTab
 from mtt.detector import (
     is_shell_foreground, is_interactive_app, has_idle_marker,
-    ContentStasisTracker, MARKER_DIR, STASIS_POLLS,
+    detect_idle, ContentStasisTracker, MARKER_DIR, STASIS_POLLS,
 )
 
 
-def _tab(tty: str, fg: str = "") -> TerminalTab:
-    return TerminalTab(tty=tty, window_id=1, tab_index=1, fg_process=fg)
+def _tab(tty: str, fg: str = "", content_len: int = 0) -> TerminalTab:
+    return TerminalTab(tty=tty, window_id=1, tab_index=1,
+                       fg_process=fg, content_len=content_len)
 
+
+# -- Shell detection --------------------------------------------------
 
 class TestShellDetection:
     def test_zsh_detected(self):
@@ -40,6 +42,8 @@ class TestShellDetection:
         assert is_shell_foreground(_tab("/dev/ttys001", "  ")) is False
 
 
+# -- Idle marker ------------------------------------------------------
+
 class TestIdleMarker:
     def test_no_marker_not_idle(self):
         assert has_idle_marker("/dev/ttys999") is False
@@ -61,6 +65,8 @@ class TestIdleMarker:
         assert has_idle_marker("/dev/ttys998") is False
 
 
+# -- Interactive app ---------------------------------------------------
+
 class TestInteractiveApp:
     def test_claude_is_interactive(self):
         assert is_interactive_app(_tab("/dev/ttys001", "claude")) is True
@@ -77,6 +83,8 @@ class TestInteractiveApp:
     def test_empty_not_interactive(self):
         assert is_interactive_app(_tab("/dev/ttys001", "")) is False
 
+
+# -- Content stasis ----------------------------------------------------
 
 class TestContentStasis:
     def test_not_stale_initially(self):
@@ -112,6 +120,8 @@ class TestContentStasis:
         tracker.remove("/dev/ttys001")
         assert tracker.update("/dev/ttys001", 1000) is False
 
+
+# -- Stasis child process tracking -------------------------------------
 
 class TestStasisChildProcess:
     """Stasis must not trigger when new child processes indicate a tool call."""
@@ -173,3 +183,75 @@ class TestStasisChildProcess:
         for _ in range(STASIS_POLLS + 1):
             tracker.update("/dev/ttys001", 300, frozenset())
         assert tracker.update("/dev/ttys001", 300, frozenset()) is True
+
+
+# -- detect_idle() orchestration ---------------------------------------
+
+class TestDetectIdle:
+    """Test the idle detection priority chain."""
+
+    def test_marker_highest_priority(self):
+        """Marker wins even when shell and stasis would also match."""
+        os.makedirs(MARKER_DIR, exist_ok=True)
+        marker = os.path.join(MARKER_DIR, "ttys050.idle")
+        try:
+            open(marker, "w").close()
+            tab = _tab("/dev/ttys050", "-zsh", content_len=100)
+            stasis = ContentStasisTracker()
+            detect_idle(tab, frozenset(), stasis)
+            assert tab.waiting_for_input is True
+            assert tab.idle_reason == "marker"
+        finally:
+            os.remove(marker)
+
+    def test_shell_second_priority(self):
+        """Shell detected when no marker exists."""
+        tab = _tab("/dev/ttys051", "-zsh")
+        stasis = ContentStasisTracker()
+        detect_idle(tab, frozenset(), stasis)
+        assert tab.waiting_for_input is True
+        assert tab.idle_reason == "shell"
+
+    def test_stasis_third_priority(self):
+        """Interactive app + stasis triggers idle."""
+        stasis = ContentStasisTracker()
+        tab = _tab("/dev/ttys052", "claude", content_len=500)
+        for _ in range(STASIS_POLLS + 1):
+            tab.waiting_for_input = False
+            tab.idle_reason = ""
+            detect_idle(tab, frozenset(), stasis)
+        assert tab.waiting_for_input is True
+        assert tab.idle_reason == "stasis"
+
+    def test_interactive_not_stale(self):
+        """Interactive app but content keeps changing → not idle."""
+        stasis = ContentStasisTracker()
+        for i in range(STASIS_POLLS + 1):
+            tab = _tab("/dev/ttys053", "claude", content_len=100 + i)
+            detect_idle(tab, frozenset(), stasis)
+        assert tab.waiting_for_input is False
+        assert tab.idle_reason == ""
+
+    def test_non_interactive_non_shell(self):
+        """Random process (vim, make, etc.) → not idle."""
+        tab = _tab("/dev/ttys054", "vim", content_len=100)
+        stasis = ContentStasisTracker()
+        detect_idle(tab, frozenset(), stasis)
+        assert tab.waiting_for_input is False
+        assert tab.idle_reason == ""
+
+    def test_stasis_blocked_by_new_child(self):
+        """Interactive app + stasis + new child → not idle (tool running)."""
+        stasis = ContentStasisTracker()
+        # Baseline with no children
+        tab = _tab("/dev/ttys055", "claude", content_len=100)
+        detect_idle(tab, frozenset(), stasis)
+        tab.content_len = 200
+        detect_idle(tab, frozenset(), stasis)
+        # Content stops, child appears
+        tab.content_len = 200
+        for _ in range(STASIS_POLLS + 1):
+            tab.waiting_for_input = False
+            tab.idle_reason = ""
+            detect_idle(tab, frozenset({9999}), stasis)
+        assert tab.waiting_for_input is False

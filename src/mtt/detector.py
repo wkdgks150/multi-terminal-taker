@@ -5,7 +5,8 @@ Detection strategy (in priority order):
    Created by Claude Code Stop hook, removed by UserPromptSubmit hook.
 2. Shell foreground (zsh/bash/fish) → always waiting for input.
 3. Content stasis: foreground is an interactive app (claude, node, etc.)
-   and terminal content hasn't changed for STASIS_SECONDS → idle.
+   and terminal content hasn't changed for STASIS_POLLS seconds
+   and no new child processes appeared → idle.
    Catches mid-turn waiting states like AskUserQuestion.
 """
 
@@ -28,6 +29,12 @@ MARKER_DIR = "/tmp/mtt"
 STASIS_POLLS = 8  # consecutive unchanged polls → idle (8s at 1s interval)
 
 
+def has_idle_marker(tty: str) -> bool:
+    """Check if the Claude Code idle marker file exists for this TTY."""
+    tty_name = os.path.basename(tty)
+    return os.path.exists(os.path.join(MARKER_DIR, f"{tty_name}.idle"))
+
+
 def is_shell_foreground(tab: TerminalTab) -> bool:
     """Check if a shell is the foreground process."""
     process = tab.fg_process.strip()
@@ -44,12 +51,6 @@ def is_interactive_app(tab: TerminalTab) -> bool:
         return False
     basename = process.rsplit("/", 1)[-1] if "/" in process else process
     return basename in INTERACTIVE_APPS
-
-
-def has_idle_marker(tty: str) -> bool:
-    """Check if the Claude Code idle marker file exists for this TTY."""
-    tty_name = os.path.basename(tty)
-    return os.path.exists(os.path.join(MARKER_DIR, f"{tty_name}.idle"))
 
 
 class ContentStasisTracker:
@@ -93,3 +94,38 @@ class ContentStasisTracker:
         """Stop tracking a TTY."""
         self._state.pop(tty, None)
         self._baseline_children.pop(tty, None)
+
+
+def detect_idle(tab: TerminalTab, child_pids: frozenset[int],
+                stasis: ContentStasisTracker) -> None:
+    """Run the idle detection priority chain and set tab fields.
+
+    Priority order:
+    1. Hook marker file     → idle (reason="marker")
+    2. Shell foreground     → idle (reason="shell")
+    3. Interactive app + stasis → idle (reason="stasis")
+    """
+    if has_idle_marker(tab.tty):
+        tab.waiting_for_input = True
+        tab.idle_reason = "marker"
+        return
+
+    if is_shell_foreground(tab):
+        tab.waiting_for_input = True
+        tab.idle_reason = "shell"
+        return
+
+    if is_interactive_app(tab):
+        if stasis.update(tab.tty, tab.content_len, child_pids):
+            tab.waiting_for_input = True
+            tab.idle_reason = "stasis"
+        else:
+            tab.waiting_for_input = False
+            tab.idle_reason = ""
+        return
+
+    # Non-interactive, non-shell process — keep stasis tracking alive
+    # so baseline children stay current.
+    stasis.update(tab.tty, tab.content_len, child_pids)
+    tab.waiting_for_input = False
+    tab.idle_reason = ""

@@ -14,6 +14,8 @@ def _tab(tty: str, fg: str = "-zsh", waiting: bool = True,
     )
 
 
+# -- Basic queue behaviour ---------------------------------------------
+
 class TestQueueBasic:
     def test_starts_idle(self):
         q = PopupQueue("/dev/ttys000")
@@ -50,6 +52,8 @@ class TestQueueBasic:
         assert q.queue == ["/dev/ttys001", "/dev/ttys003"]
 
 
+# -- Queue ordering ----------------------------------------------------
+
 class TestQueueOrdering:
     @patch("mtt.queue.window_controller")
     def test_new_waiting_added_to_end(self, mock_wc):
@@ -82,6 +86,8 @@ class TestQueueOrdering:
         q.update([_tab("/dev/ttys001")], "/dev/ttys001")
         assert q.queue == ["/dev/ttys001"]
 
+
+# -- Serving behaviour -------------------------------------------------
 
 class TestServingBehavior:
     @patch("mtt.queue.window_controller")
@@ -125,6 +131,8 @@ class TestServingBehavior:
         assert q.serving is None
         assert q.status_line == "IDLE"
 
+
+# -- Frontmost sync ----------------------------------------------------
 
 class TestFrontmostSync:
     """serving must follow frontmost_tty so popups match what user is looking at."""
@@ -182,6 +190,8 @@ class TestFrontmostSync:
         assert q.serving == "/dev/ttys001"
 
 
+# -- Shell exclusion ---------------------------------------------------
+
 class TestShellExclusion:
     """Shell-only idle terminals must NOT enter the popup queue."""
 
@@ -232,14 +242,15 @@ class TestShellExclusion:
         assert q.queue == ["/dev/ttys001"]
 
 
+# -- Stasis holdoff ----------------------------------------------------
+
 class TestStasisHoldoff:
-    """Stasis-served terminals must not switch away when user is typing."""
+    """Stasis-served terminals must NEVER auto-switch."""
 
     @patch("mtt.queue.window_controller")
     def test_stasis_typing_no_popup(self, mock_wc):
         """User types in stasis-idle terminal → content changes → no popup."""
         q = PopupQueue("/dev/ttys000")
-        # A idle via stasis, B idle via marker. A gets served.
         q.update([
             _tab("/dev/ttys001", idle_reason="stasis"),
             _tab("/dev/ttys002", idle_reason="marker"),
@@ -251,33 +262,64 @@ class TestStasisHoldoff:
             _tab("/dev/ttys001", waiting=False),
             _tab("/dev/ttys002", idle_reason="marker"),
         ], "/dev/ttys001")
-        # Should NOT switch — user is looking at stasis terminal
+        # Should NOT switch — stasis can't distinguish typing from submission
         assert q.serving == "/dev/ttys001"
         mock_wc.popup.assert_not_called()
 
     @patch("mtt.queue.window_controller")
-    def test_stasis_holdoff_releases_on_focus_away(self, mock_wc):
-        """User finishes typing and looks away → switch to next."""
+    def test_stasis_no_switch_even_when_not_frontmost(self, mock_wc):
+        """Stasis terminal leaves idle while user looks elsewhere → still no switch."""
         q = PopupQueue("/dev/ttys000")
         q.update([
             _tab("/dev/ttys001", idle_reason="stasis"),
             _tab("/dev/ttys002", idle_reason="marker"),
         ], "/dev/ttys001")
         mock_wc.popup.reset_mock()
-        # User types → A leaves waiting_ttys, but still frontmost
+        # A leaves waiting, user is looking at a busy terminal
         q.update([
             _tab("/dev/ttys001", waiting=False),
             _tab("/dev/ttys002", idle_reason="marker"),
-        ], "/dev/ttys001")
+            _tab("/dev/ttys003", waiting=False),
+        ], "/dev/ttys003")
         assert q.serving == "/dev/ttys001"
-        # User looks away (switches to another app or terminal)
+        mock_wc.popup.assert_not_called()
+
+    @patch("mtt.queue.window_controller")
+    def test_stasis_no_switch_when_app_inactive(self, mock_wc):
+        """Stasis held even when terminal app is not active (frontmost="")."""
+        q = PopupQueue("/dev/ttys000")
+        q.update([
+            _tab("/dev/ttys001", idle_reason="stasis"),
+            _tab("/dev/ttys002", idle_reason="marker"),
+        ], "/dev/ttys001")
+        mock_wc.popup.reset_mock()
         q.update([
             _tab("/dev/ttys001", waiting=False),
             _tab("/dev/ttys002", idle_reason="marker"),
         ], "")
-        # NOW should switch to B
+        assert q.serving == "/dev/ttys001"
+        mock_wc.popup.assert_not_called()
+
+    @patch("mtt.queue.window_controller")
+    def test_stasis_releases_via_frontmost_sync(self, mock_wc):
+        """User explicitly looks at another idle terminal → frontmost sync switches."""
+        q = PopupQueue("/dev/ttys000")
+        q.update([
+            _tab("/dev/ttys001", idle_reason="stasis"),
+            _tab("/dev/ttys002", idle_reason="marker"),
+        ], "/dev/ttys001")
+        mock_wc.popup.reset_mock()
+        # A leaves waiting, held off
+        q.update([
+            _tab("/dev/ttys001", waiting=False),
+            _tab("/dev/ttys002", idle_reason="marker"),
+        ], "/dev/ttys001")
+        # User explicitly looks at B (idle) → frontmost sync
+        q.update([
+            _tab("/dev/ttys001", waiting=False),
+            _tab("/dev/ttys002", idle_reason="marker"),
+        ], "/dev/ttys002")
         assert q.serving == "/dev/ttys002"
-        mock_wc.popup.assert_called_with("/dev/ttys002")
 
     @patch("mtt.queue.window_controller")
     def test_stasis_becomes_idle_again(self, mock_wc):
@@ -298,7 +340,6 @@ class TestStasisHoldoff:
             _tab("/dev/ttys001", idle_reason="stasis"),
             _tab("/dev/ttys002", idle_reason="marker"),
         ], "/dev/ttys001")
-        # Serving should re-sync to A (frontmost + idle)
         assert q.serving == "/dev/ttys001"
         mock_wc.popup.assert_not_called()
 
@@ -316,7 +357,6 @@ class TestStasisHoldoff:
             _tab("/dev/ttys001", waiting=False),
             _tab("/dev/ttys002", idle_reason="marker"),
         ], "/dev/ttys001")
-        # Should switch immediately (marker = definitive submit signal)
         assert q.serving == "/dev/ttys002"
         mock_wc.popup.assert_called_with("/dev/ttys002")
 
@@ -324,7 +364,6 @@ class TestStasisHoldoff:
     def test_stasis_upgrades_to_marker(self, mock_wc):
         """Stasis-served terminal gets marker → submit switches immediately."""
         q = PopupQueue("/dev/ttys000")
-        # A idle via stasis
         q.update([
             _tab("/dev/ttys001", idle_reason="stasis"),
             _tab("/dev/ttys002", idle_reason="marker"),
@@ -341,10 +380,27 @@ class TestStasisHoldoff:
             _tab("/dev/ttys001", waiting=False),
             _tab("/dev/ttys002", idle_reason="marker"),
         ], "/dev/ttys001")
-        # Should switch immediately (now marker-based)
         assert q.serving == "/dev/ttys002"
         mock_wc.popup.assert_called_with("/dev/ttys002")
 
+    @patch("mtt.queue.window_controller")
+    def test_stasis_serving_cleared_when_terminal_closes(self, mock_wc):
+        """If a stasis-held terminal disappears, clear serving."""
+        q = PopupQueue("/dev/ttys000")
+        q.update([
+            _tab("/dev/ttys001", idle_reason="stasis"),
+            _tab("/dev/ttys002", idle_reason="marker"),
+        ], "/dev/ttys001")
+        mock_wc.popup.reset_mock()
+        # ttys001 disappears entirely (terminal closed)
+        q.update([
+            _tab("/dev/ttys002", idle_reason="marker"),
+        ], "")
+        assert q.serving == "/dev/ttys002"
+        mock_wc.popup.assert_called_with("/dev/ttys002")
+
+
+# -- Status line -------------------------------------------------------
 
 class TestStatusLine:
     @patch("mtt.queue.window_controller")
