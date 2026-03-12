@@ -50,7 +50,8 @@ Terminal.app / iTerm2           MTT
 | **Content stasis** | Interactive app (claude, node) + content unchanged for 8s + no new child processes | 8s delay |
 
 Content stasis catches mid-turn waiting states like Claude Code's `AskUserQuestion` prompts,
-where the Stop hook hasn't fired yet. Child process tracking prevents false positives during
+where the Stop hook hasn't fired yet. The busy marker prevents false positives during API calls
+(no child processes to detect), and child process tracking prevents false positives during
 long tool calls.
 
 ## Supported Terminals

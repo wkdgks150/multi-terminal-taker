@@ -5,7 +5,8 @@ from unittest.mock import patch
 from mtt.monitor import TerminalTab
 from mtt.detector import (
     is_shell_foreground, is_interactive_app, has_idle_marker,
-    detect_idle, ContentStasisTracker, MARKER_DIR, STASIS_POLLS,
+    has_busy_marker, detect_idle, ContentStasisTracker, MARKER_DIR,
+    STASIS_POLLS,
 )
 
 
@@ -63,6 +64,29 @@ class TestIdleMarker:
         open(marker, "w").close()
         os.remove(marker)
         assert has_idle_marker("/dev/ttys998") is False
+
+
+# -- Busy marker -------------------------------------------------------
+
+class TestBusyMarker:
+    def test_no_marker_not_busy(self):
+        assert has_busy_marker("/dev/ttys997") is False
+
+    def test_marker_exists_is_busy(self):
+        os.makedirs(MARKER_DIR, exist_ok=True)
+        marker = os.path.join(MARKER_DIR, "ttys997.busy")
+        try:
+            open(marker, "w").close()
+            assert has_busy_marker("/dev/ttys997") is True
+        finally:
+            os.remove(marker)
+
+    def test_marker_removed_not_busy(self):
+        os.makedirs(MARKER_DIR, exist_ok=True)
+        marker = os.path.join(MARKER_DIR, "ttys996.busy")
+        open(marker, "w").close()
+        os.remove(marker)
+        assert has_busy_marker("/dev/ttys996") is False
 
 
 # -- Interactive app ---------------------------------------------------
@@ -239,6 +263,40 @@ class TestDetectIdle:
         detect_idle(tab, frozenset(), stasis)
         assert tab.waiting_for_input is False
         assert tab.idle_reason == ""
+
+    def test_busy_marker_overrides_stasis(self):
+        """Busy marker prevents stasis from triggering (concocting scenario)."""
+        os.makedirs(MARKER_DIR, exist_ok=True)
+        busy = os.path.join(MARKER_DIR, "ttys056.busy")
+        try:
+            open(busy, "w").close()
+            stasis = ContentStasisTracker()
+            tab = _tab("/dev/ttys056", "claude", content_len=500)
+            for _ in range(STASIS_POLLS + 1):
+                tab.waiting_for_input = False
+                tab.idle_reason = ""
+                detect_idle(tab, frozenset(), stasis)
+            assert tab.waiting_for_input is False
+            assert tab.idle_reason == ""
+        finally:
+            os.remove(busy)
+
+    def test_busy_marker_overridden_by_idle_marker(self):
+        """Idle marker takes priority even when busy marker also exists."""
+        os.makedirs(MARKER_DIR, exist_ok=True)
+        idle = os.path.join(MARKER_DIR, "ttys057.idle")
+        busy = os.path.join(MARKER_DIR, "ttys057.busy")
+        try:
+            open(idle, "w").close()
+            open(busy, "w").close()
+            tab = _tab("/dev/ttys057", "claude")
+            stasis = ContentStasisTracker()
+            detect_idle(tab, frozenset(), stasis)
+            assert tab.waiting_for_input is True
+            assert tab.idle_reason == "marker"
+        finally:
+            os.remove(idle)
+            os.remove(busy)
 
     def test_stasis_blocked_by_new_child(self):
         """Interactive app + stasis + new child → not idle (tool running)."""

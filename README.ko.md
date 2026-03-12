@@ -45,6 +45,7 @@ Terminal.app / iTerm2           MTT
 | **콘텐츠 정체** | interactive 앱(claude, node) + 콘텐츠 8초 불변 + 새 자식 프로세스 없음 | 8초 |
 
 콘텐츠 정체 감지는 Claude Code의 `AskUserQuestion` 같은 mid-turn 대기 상태를 잡습니다.
+busy 마커로 API 호출(자식 프로세스 없음) 중 오탐을 방지하고,
 자식 프로세스 추적으로 긴 tool call 실행 중 오탐을 방지합니다.
 
 ## 지원 터미널

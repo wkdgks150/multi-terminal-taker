@@ -7,6 +7,7 @@ while [ "$PID" -gt 1 ]; do
     TTY=$(ps -o tty= -p "$PID" 2>/dev/null | tr -d ' ')
     if [ -n "$TTY" ] && [ "$TTY" != "??" ]; then
         mkdir -p "$MARKER_DIR"
+        rm -f "$MARKER_DIR/${TTY}.busy"
         touch "$MARKER_DIR/${TTY}.idle"
         exit 0
     fi

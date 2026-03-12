@@ -1,13 +1,16 @@
 """Detect whether a terminal is waiting for user input.
 
 Detection strategy (in priority order):
-1. Hook marker: /tmp/mtt/{tty}.idle exists → idle.
+1. Idle marker: /tmp/mtt/{tty}.idle exists → idle.
    Created by Claude Code Stop hook, removed by UserPromptSubmit hook.
-2. Shell foreground (zsh/bash/fish) → always waiting for input.
-3. Content stasis: foreground is an interactive app (claude, node, etc.)
+2. Busy marker: /tmp/mtt/{tty}.busy exists → definitely busy.
+   Created by UserPromptSubmit hook, removed by Stop hook.
+   Prevents stasis false positives during API calls (concocting).
+3. Shell foreground (zsh/bash/fish) → always waiting for input.
+4. Content stasis: foreground is an interactive app (claude, node, etc.)
    and terminal content hasn't changed for STASIS_POLLS seconds
    and no new child processes appeared → idle.
-   Catches mid-turn waiting states like AskUserQuestion.
+   Fallback for terminals without hook integration.
 """
 
 import os
@@ -33,6 +36,17 @@ def has_idle_marker(tty: str) -> bool:
     """Check if the Claude Code idle marker file exists for this TTY."""
     tty_name = os.path.basename(tty)
     return os.path.exists(os.path.join(MARKER_DIR, f"{tty_name}.idle"))
+
+
+def has_busy_marker(tty: str) -> bool:
+    """Check if the Claude Code busy marker file exists for this TTY.
+
+    Created by UserPromptSubmit hook, removed by Stop hook.
+    While this marker exists, the terminal is definitely processing
+    and stasis detection must be skipped.
+    """
+    tty_name = os.path.basename(tty)
+    return os.path.exists(os.path.join(MARKER_DIR, f"{tty_name}.busy"))
 
 
 def is_shell_foreground(tab: TerminalTab) -> bool:
@@ -101,13 +115,21 @@ def detect_idle(tab: TerminalTab, child_pids: frozenset[int],
     """Run the idle detection priority chain and set tab fields.
 
     Priority order:
-    1. Hook marker file     → idle (reason="marker")
-    2. Shell foreground     → idle (reason="shell")
-    3. Interactive app + stasis → idle (reason="stasis")
+    1. Idle marker   → idle (reason="marker")
+    2. Busy marker   → busy (skip stasis — terminal is processing)
+    3. Shell fg      → idle (reason="shell")
+    4. Stasis        → idle (reason="stasis")
     """
     if has_idle_marker(tab.tty):
         tab.waiting_for_input = True
         tab.idle_reason = "marker"
+        return
+
+    if has_busy_marker(tab.tty):
+        # Hooks confirm terminal is processing. Skip stasis entirely
+        # to prevent false positives during API calls (concocting).
+        tab.waiting_for_input = False
+        tab.idle_reason = ""
         return
 
     if is_shell_foreground(tab):
