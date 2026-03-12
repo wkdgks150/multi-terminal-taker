@@ -7,7 +7,7 @@ name = "multi-terminal-taker"
 version = "0.1.0"
 description = "Auto-popup terminals waiting for user input — like a poker MTT client for your terminal"
 requires-python = ">=3.12"
-license = {text = "MIT"}
+license = "MIT"
 dependencies = []
 readme = "README.md"
 keywords = ["terminal", "macos", "automation", "claude-code", "ai-agent", "iterm2", "applescript", "mtt"]
@@ -15,7 +15,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: MacOS X",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
