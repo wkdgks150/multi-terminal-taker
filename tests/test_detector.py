@@ -3,8 +3,8 @@
 import os
 import tempfile
 from unittest.mock import patch
-from terminal_activator.monitor import TerminalTab
-from terminal_activator.detector import (
+from mtt.monitor import TerminalTab
+from mtt.detector import (
     is_shell_foreground, is_interactive_app, has_idle_marker,
     ContentStasisTracker, MARKER_DIR, STASIS_POLLS,
 )
@@ -111,3 +111,65 @@ class TestContentStasis:
             tracker.update("/dev/ttys001", 1000)
         tracker.remove("/dev/ttys001")
         assert tracker.update("/dev/ttys001", 1000) is False
+
+
+class TestStasisChildProcess:
+    """Stasis must not trigger when new child processes indicate a tool call."""
+
+    def test_no_children_stale(self):
+        """No children → stasis triggers normally (AskUserQuestion)."""
+        tracker = ContentStasisTracker()
+        for _ in range(STASIS_POLLS + 1):
+            tracker.update("/dev/ttys001", 1000, frozenset())
+        assert tracker.update("/dev/ttys001", 1000, frozenset()) is True
+
+    def test_new_child_blocks_stasis(self):
+        """New child appearing after content stops → tool call → not idle."""
+        tracker = ContentStasisTracker()
+        # Content changing phase — baseline recorded with no children
+        tracker.update("/dev/ttys001", 100, frozenset())
+        tracker.update("/dev/ttys001", 200, frozenset())
+        # Content stops, new child appears (bash tool call)
+        bash_pid = frozenset({12345})
+        for _ in range(STASIS_POLLS + 1):
+            tracker.update("/dev/ttys001", 200, bash_pid)
+        assert tracker.update("/dev/ttys001", 200, bash_pid) is False
+
+    def test_baseline_child_does_not_block(self):
+        """MCP server present during content changes → absorbed into baseline."""
+        tracker = ContentStasisTracker()
+        mcp = frozenset({99999})
+        # Content changing with MCP server running
+        tracker.update("/dev/ttys001", 100, mcp)
+        tracker.update("/dev/ttys001", 200, mcp)
+        # Content stops, same MCP server still there — no new children
+        for _ in range(STASIS_POLLS + 1):
+            tracker.update("/dev/ttys001", 200, mcp)
+        assert tracker.update("/dev/ttys001", 200, mcp) is True
+
+    def test_new_child_plus_baseline(self):
+        """MCP server (baseline) + new bash child → not idle."""
+        tracker = ContentStasisTracker()
+        mcp = frozenset({99999})
+        # Baseline includes MCP
+        tracker.update("/dev/ttys001", 100, mcp)
+        tracker.update("/dev/ttys001", 200, mcp)
+        # Content stops, new child alongside MCP
+        both = frozenset({99999, 12345})
+        for _ in range(STASIS_POLLS + 1):
+            tracker.update("/dev/ttys001", 200, both)
+        assert tracker.update("/dev/ttys001", 200, both) is False
+
+    def test_child_disappears_resets_baseline(self):
+        """Tool finishes → child gone → content changes → new baseline."""
+        tracker = ContentStasisTracker()
+        # Phase 1: tool running (child present during content change)
+        bash = frozenset({12345})
+        tracker.update("/dev/ttys001", 100, bash)
+        tracker.update("/dev/ttys001", 200, bash)  # baseline = {12345}
+        # Phase 2: tool done, child gone, Claude outputs result
+        tracker.update("/dev/ttys001", 300, frozenset())  # baseline = {}
+        # Phase 3: AskUserQuestion — no children, content stable
+        for _ in range(STASIS_POLLS + 1):
+            tracker.update("/dev/ttys001", 300, frozenset())
+        assert tracker.update("/dev/ttys001", 300, frozenset()) is True

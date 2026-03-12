@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "terminal-activator"
+name = "multi-terminal-taker"
 version = "0.1.0"
-description = "Auto-popup terminals waiting for user input — like poker multi-table software for your terminal"
+description = "Auto-popup terminals waiting for user input — like a poker MTT client for your terminal"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 dependencies = []
 readme = "README.md"
-keywords = ["terminal", "macos", "automation", "claude-code", "ai-agent", "iterm2", "applescript"]
+keywords = ["terminal", "macos", "automation", "claude-code", "ai-agent", "iterm2", "applescript", "mtt"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: MacOS X",
@@ -23,12 +23,12 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wkdgks150/terminal-activator"
-Repository = "https://github.com/wkdgks150/terminal-activator"
-Issues = "https://github.com/wkdgks150/terminal-activator/issues"
+Homepage = "https://github.com/wkdgks150/multi-terminal-taker"
+Repository = "https://github.com/wkdgks150/multi-terminal-taker"
+Issues = "https://github.com/wkdgks150/multi-terminal-taker/issues"
 
 [project.scripts]
-terminal-activator = "terminal_activator.cli:main"
+mtt = "mtt.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

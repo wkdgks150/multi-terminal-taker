@@ -119,11 +119,17 @@ def scan_terminals() -> tuple[list[TerminalTab], str]:
     return tabs, frontmost_tty
 
 
-def scan_foreground_processes() -> dict[str, str]:
-    """Return {tty: fg_process_name} by parsing ps output."""
+def scan_foreground_processes() -> dict[str, tuple[str, frozenset[int]]]:
+    """Return {tty: (fg_process_name, child_pids_on_tty)} by parsing ps output.
+
+    child_pids_on_tty contains PIDs of direct children of the foreground
+    process group leader that share the same TTY.  This lets callers
+    distinguish "claude waiting for input" (no children) from "claude
+    running a tool" (bash/python/… child present).
+    """
     try:
         result = subprocess.run(
-            ["ps", "-e", "-o", "pid,pgid,tpgid,tty,comm"],
+            ["ps", "-e", "-o", "pid,ppid,pgid,tpgid,tty,comm"],
             capture_output=True, text=True, timeout=5,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -133,18 +139,20 @@ def scan_foreground_processes() -> dict[str, str]:
         return {}
 
     tpgid_map: dict[str, int] = {}
-    pgid_procs: dict[tuple[str, int], str] = {}
+    pgid_procs: dict[tuple[str, int], tuple[str, int]] = {}  # (tty, pgid) → (comm, pid)
+    tty_procs: dict[str, list[tuple[int, int]]] = {}  # tty → [(pid, ppid)]
 
     for line in result.stdout.strip().split("\n")[1:]:
         parts = line.split()
-        if len(parts) < 5:
+        if len(parts) < 6:
             continue
         try:
             pid = int(parts[0])
-            pgid = int(parts[1])
-            tpgid = int(parts[2])
-            tty = parts[3]
-            comm = parts[4]
+            ppid = int(parts[1])
+            pgid = int(parts[2])
+            tpgid = int(parts[3])
+            tty = parts[4]
+            comm = parts[5]
         except (ValueError, IndexError):
             continue
 
@@ -153,14 +161,20 @@ def scan_foreground_processes() -> dict[str, str]:
 
         tty_path = f"/dev/{tty}" if not tty.startswith("/dev/") else tty
         tpgid_map[tty_path] = tpgid
+        tty_procs.setdefault(tty_path, []).append((pid, ppid))
 
         if pid == pgid:
-            pgid_procs[(tty_path, pgid)] = comm
+            pgid_procs[(tty_path, pgid)] = (comm, pid)
 
-    fg_map: dict[str, str] = {}
+    fg_map: dict[str, tuple[str, frozenset[int]]] = {}
     for tty_path, tpgid in tpgid_map.items():
         key = (tty_path, tpgid)
         if key in pgid_procs:
-            fg_map[tty_path] = pgid_procs[key]
+            comm, fg_pid = pgid_procs[key]
+            children = frozenset(
+                pid for pid, ppid in tty_procs.get(tty_path, [])
+                if ppid == fg_pid and pid != fg_pid
+            )
+            fg_map[tty_path] = (comm, children)
 
     return fg_map

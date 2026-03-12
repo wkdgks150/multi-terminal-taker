@@ -4,15 +4,15 @@ import os
 import time
 import signal
 
-from terminal_activator.monitor import scan_terminals, scan_foreground_processes
-from terminal_activator.detector import (
+from mtt.monitor import scan_terminals, scan_foreground_processes
+from mtt.detector import (
     has_idle_marker, is_shell_foreground, is_interactive_app,
     ContentStasisTracker,
 )
-from terminal_activator.queue import PopupQueue
+from mtt.queue import PopupQueue
 
 POLL_INTERVAL = 1.0  # seconds
-PID_FILE = "/tmp/terminal-activator.pid"
+PID_FILE = "/tmp/mtt.pid"
 
 
 def get_own_tty() -> str:
@@ -38,7 +38,7 @@ def run():
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
 
-    print(f"Terminal Activator started (PID: {os.getpid()})")
+    print(f"MTT started (PID: {os.getpid()})")
     print(f"Polling every {POLL_INTERVAL}s. Press Ctrl+C to stop.")
 
     try:
@@ -51,7 +51,9 @@ def run():
             fg_map = scan_foreground_processes()
 
             for tab in tabs:
-                tab.fg_process = fg_map.get(tab.tty, "")
+                fg_info = fg_map.get(tab.tty)
+                tab.fg_process = fg_info[0] if fg_info else ""
+                child_pids = fg_info[1] if fg_info else frozenset()
 
                 if has_idle_marker(tab.tty):
                     tab.waiting_for_input = True
@@ -59,11 +61,15 @@ def run():
                 elif is_shell_foreground(tab):
                     tab.waiting_for_input = True
                     tab.idle_reason = "shell"
-                elif is_interactive_app(tab) and stasis.update(tab.tty, tab.content_len):
-                    tab.waiting_for_input = True
-                    tab.idle_reason = "stasis"
+                elif is_interactive_app(tab):
+                    if stasis.update(tab.tty, tab.content_len, child_pids):
+                        tab.waiting_for_input = True
+                        tab.idle_reason = "stasis"
+                    else:
+                        tab.waiting_for_input = False
+                        tab.idle_reason = ""
                 else:
-                    stasis.update(tab.tty, tab.content_len)
+                    stasis.update(tab.tty, tab.content_len, child_pids)
                     tab.waiting_for_input = False
                     tab.idle_reason = ""
 
@@ -77,4 +83,4 @@ def run():
             os.remove(PID_FILE)
         except OSError:
             pass
-        print("\nTerminal Activator stopped.")
+        print("\nMTT stopped.")

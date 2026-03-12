@@ -1,16 +1,16 @@
-"""CLI entry point for terminal-activator."""
+"""CLI entry point for MTT (Multi-Terminal Taker)."""
 
 import os
 import sys
 import signal
 
-from terminal_activator.daemon import run, PID_FILE
+from mtt.daemon import run, PID_FILE
 
 USAGE = """\
-Usage: terminal-activator <command>
+Usage: mtt <command>
 
 Commands:
-  start    Start the activator daemon (foreground)
+  start    Start the MTT daemon (foreground)
   stop     Stop the running daemon
   status   Show daemon status
 """
@@ -35,7 +35,7 @@ def _is_running(pid: int) -> bool:
 def cmd_start():
     pid = _read_pid()
     if pid and _is_running(pid):
-        print(f"Already running (PID: {pid}). Use 'terminal-activator stop' first.")
+        print(f"Already running (PID: {pid}). Use 'mtt stop' first.")
         sys.exit(1)
     run()
 

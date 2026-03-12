@@ -1,7 +1,7 @@
 #!/bin/sh
 # Claude Code UserPromptSubmit hook: mark terminal as BUSY
 # Walks up process tree to find the controlling TTY.
-MARKER_DIR="/tmp/terminal-activator"
+MARKER_DIR="/tmp/mtt"
 PID=$$
 while [ "$PID" -gt 1 ]; do
     TTY=$(ps -o tty= -p "$PID" 2>/dev/null | tr -d ' ')

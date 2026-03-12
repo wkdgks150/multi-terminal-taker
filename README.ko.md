@@ -1,9 +1,9 @@
-# Terminal Activator
+# MTT (Multi-Terminal Taker)
 
 [English](README.md)
 
 사용자 입력이 필요한 터미널을 자동으로 팝업시키는 macOS 데몬.
-포커 멀티테이블 소프트웨어에서 영감을 받았습니다.
+포커 멀티테이블 토너먼트(MTT) 클라이언트에서 영감을 받았습니다.
 
 ## 왜 만들었나
 
@@ -17,7 +17,7 @@
 ## 주요 기능
 
 - **터미널 스캔** — Terminal.app / iTerm2의 모든 윈도우/탭을 1초마다 폴링
-- **입력 대기 감지** — 훅 마커 + 쉘 프롬프트 + 콘텐츠 정체(4초) 3단계 감지
+- **입력 대기 감지** — 훅 마커 + 쉘 프롬프트 + 콘텐츠 정체(8초) 3단계 감지
 - **자동 팝업** — 입력이 필요한 터미널의 윈도우를 자동으로 맨 앞으로 이동
 - **FIFO 대기열** — 여러 터미널이 동시에 입력 대기 시 선입선출 순서로 서빙
 - **자기 자신 제외** — 데몬이 실행 중인 터미널은 자동으로 모니터링에서 제외
@@ -25,7 +25,7 @@
 ## 동작 원리
 
 ```
-Terminal.app / iTerm2           Terminal Activator
+Terminal.app / iTerm2           MTT
 ┌──────────────┐
 │ Tab 1: build │ ──running──┐
 │ Tab 2: test  │ ──running──┤
@@ -42,9 +42,10 @@ Terminal.app / iTerm2           Terminal Activator
 |------|--------|------|
 | **훅 마커** | Claude Code idle/busy 훅이 마커 파일 생성/삭제 | 즉시 |
 | **쉘 프롬프트** | 포어그라운드 프로세스가 zsh/bash/fish | 즉시 |
-| **콘텐츠 정체** | interactive 앱(claude, node) + 콘텐츠 4초 불변 | 4초 |
+| **콘텐츠 정체** | interactive 앱(claude, node) + 콘텐츠 8초 불변 + 새 자식 프로세스 없음 | 8초 |
 
 콘텐츠 정체 감지는 Claude Code의 `AskUserQuestion` 같은 mid-turn 대기 상태를 잡습니다.
+자식 프로세스 추적으로 긴 tool call 실행 중 오탐을 방지합니다.
 
 ## 지원 터미널
 
@@ -63,13 +64,13 @@ Terminal.app / iTerm2           Terminal Activator
     "Stop": [
       {
         "matcher": "",
-        "hooks": [{"type": "command", "command": "/path/to/terminal-activator/scripts/hook-idle.sh"}]
+        "hooks": [{"type": "command", "command": "/path/to/mtt/scripts/hook-idle.sh"}]
       }
     ],
     "UserPromptSubmit": [
       {
         "matcher": "",
-        "hooks": [{"type": "command", "command": "/path/to/terminal-activator/scripts/hook-busy.sh"}]
+        "hooks": [{"type": "command", "command": "/path/to/mtt/scripts/hook-busy.sh"}]
       }
     ]
   }
@@ -87,8 +88,13 @@ Terminal.app / iTerm2           Terminal Activator
 ## 설치
 
 ```bash
-git clone https://github.com/wkdgks150/terminal-activator.git
-cd terminal-activator
+pip install multi-terminal-taker
+```
+
+또는 소스에서:
+```bash
+git clone https://github.com/wkdgks150/multi-terminal-taker.git
+cd multi-terminal-taker
 pip install -e .
 ```
 
@@ -97,9 +103,9 @@ pip install -e .
 ## 사용법
 
 ```bash
-terminal-activator start    # 데몬 시작 (포어그라운드)
-terminal-activator status   # 실행 상태 확인
-terminal-activator stop     # 데몬 종료
+mtt start    # 데몬 시작 (포어그라운드)
+mtt status   # 실행 상태 확인
+mtt stop     # 데몬 종료
 ```
 
 ```
@@ -112,7 +118,7 @@ terminal-activator stop     # 데몬 종료
 ## 파일 구조
 
 ```
-src/terminal_activator/
+src/mtt/
 ├── cli.py                # CLI (start/stop/status)
 ├── daemon.py             # 메인 폴링 루프 (1초 주기)
 ├── monitor.py            # 터미널 스캐너 (Terminal.app + iTerm2)

@@ -1,13 +1,13 @@
-# Terminal Activator
+# MTT (Multi-Terminal Taker)
 
-[![Tests](https://github.com/wkdgks150/terminal-activator/actions/workflows/test.yml/badge.svg)](https://github.com/wkdgks150/terminal-activator/actions/workflows/test.yml)
+[![Tests](https://github.com/wkdgks150/multi-terminal-taker/actions/workflows/test.yml/badge.svg)](https://github.com/wkdgks150/multi-terminal-taker/actions/workflows/test.yml)
 
-**Auto-popup terminals waiting for your input — like poker multi-table software, but for your terminal.**
+**Auto-popup terminals waiting for your input — like a poker MTT client, but for your terminal.**
 
 <!-- Record a 15-second demo: 3+ terminals with Claude Code, one goes idle, window pops up automatically -->
 <!-- ![Demo](docs/assets/demo.gif) -->
 
-> Running 5 Claude Code sessions at once? Terminal Activator watches all of them and
+> Running 5 Claude Code sessions at once? MTT watches all of them and
 > automatically brings each terminal to the front the moment it needs your input.
 > When you respond, the next waiting terminal pops up. Zero dependencies. Pure Python.
 
@@ -18,14 +18,14 @@ but occasionally one needs your input. You waste time hunting through windows to
 
 ## The Solution
 
-Terminal Activator monitors all your terminal windows. When one starts waiting for input,
+MTT monitors all your terminal windows. When one starts waiting for input,
 it pops up automatically. You deal with it, and the next one pops up — like a poker
-multi-table client that shows you whichever table needs your action.
+multi-table tournament client that shows you whichever table needs your action.
 
 ## How It Works
 
 ```
-Terminal.app / iTerm2           Terminal Activator
+Terminal.app / iTerm2           MTT
 ┌──────────────┐
 │ Tab 1: build │ ──running──┐
 │ Tab 2: test  │ ──running──┤
@@ -47,10 +47,11 @@ Terminal.app / iTerm2           Terminal Activator
 |--------|---------|-------|
 | **Hook marker** | Claude Code idle/busy hooks create/remove marker files | Instant |
 | **Shell prompt** | Foreground process is zsh/bash/fish | Instant |
-| **Content stasis** | Interactive app (claude, node) + content unchanged for 4s | 4s delay |
+| **Content stasis** | Interactive app (claude, node) + content unchanged for 8s + no new child processes | 8s delay |
 
 Content stasis catches mid-turn waiting states like Claude Code's `AskUserQuestion` prompts,
-where the Stop hook hasn't fired yet.
+where the Stop hook hasn't fired yet. Child process tracking prevents false positives during
+long tool calls.
 
 ## Supported Terminals
 
@@ -60,7 +61,7 @@ where the Stop hook hasn't fired yet.
 
 ## Claude Code Integration
 
-Terminal Activator integrates with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) hooks
+MTT integrates with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) hooks
 for instant idle/busy detection:
 
 Add to `~/.claude/settings.json`:
@@ -73,7 +74,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "/path/to/terminal-activator/scripts/hook-idle.sh"
+            "command": "/path/to/mtt/scripts/hook-idle.sh"
           }
         ]
       }
@@ -84,7 +85,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "/path/to/terminal-activator/scripts/hook-busy.sh"
+            "command": "/path/to/mtt/scripts/hook-busy.sh"
           }
         ]
       }
@@ -93,7 +94,7 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-Without hooks, Terminal Activator still works via shell prompt detection and content stasis — hooks just make it faster.
+Without hooks, MTT still works via shell prompt detection and content stasis — hooks just make it faster.
 
 ## Requirements
 
@@ -104,8 +105,13 @@ Without hooks, Terminal Activator still works via shell prompt detection and con
 ## Install
 
 ```bash
-git clone https://github.com/wkdgks150/terminal-activator.git
-cd terminal-activator
+pip install multi-terminal-taker
+```
+
+Or from source:
+```bash
+git clone https://github.com/wkdgks150/multi-terminal-taker.git
+cd multi-terminal-taker
 pip install -e .
 ```
 
@@ -114,9 +120,9 @@ Zero external dependencies — Python standard library only.
 ## Usage
 
 ```bash
-terminal-activator start    # Start daemon (foreground)
-terminal-activator status   # Check if running
-terminal-activator stop     # Stop daemon
+mtt start    # Start daemon (foreground)
+mtt status   # Check if running
+mtt stop     # Stop daemon
 ```
 
 Output while running:
@@ -130,7 +136,7 @@ Output while running:
 ## Project Structure
 
 ```
-src/terminal_activator/
+src/mtt/
 ├── cli.py                # CLI (start/stop/status)
 ├── daemon.py             # Main polling loop (1s interval)
 ├── monitor.py            # Terminal scanner (Terminal.app + iTerm2)
