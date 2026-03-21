@@ -10,8 +10,7 @@ def popup(tty: str) -> bool:
     """Bring a single terminal window/tab to the front.
 
     Finds the window containing the given TTY across Terminal.app and iTerm2,
-    selects its tab, and sets the window to index 1 (frontmost).
-    Does NOT activate the app — just reorders windows quietly.
+    selects its tab, sets the window to index 1 (frontmost), and activates the app.
     """
     if not tty:
         return False
@@ -29,6 +28,7 @@ if procNames contains "Terminal" then
                 if tty of t is "{tty}" then
                     set selected tab of w to t
                     set index of w to 1
+                    activate
                     set found to true
                     exit repeat
                 end if
@@ -46,6 +46,7 @@ if not found and procNames contains "iTerm2" then
                     if tty of s is "{tty}" then
                         select s
                         set index of w to 1
+                        activate
                         return
                     end if
                 end repeat
